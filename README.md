@@ -1,7 +1,6 @@
 # Family Tree
 
-A Django app for a family tree. No accounts, no login — anyone who opens the
-site can browse the tree and add, edit, or delete people straight from the page.
+A Django app for a family tree.
 
 ![Demo](screenshot.gif)
 
@@ -16,17 +15,6 @@ docker compose up --build
 This starts Postgres + the web app, applies migrations automatically, and serves
 the app at http://localhost:8000.
 
-### Add the first person
-
-Open http://localhost:8000/ and enter the ancestor's name (the "الجد" prompt on an
-empty tree). After that, click any person to open their card and use:
-
-- **ابن / ابنة** — add a son or daughter
-- **تعديل** — edit their details (name, birth/death year, phone, photo, …)
-- **تعيين الأم** — link a mother
-- **حذف** — delete a leaf node (no children)
-
-The toolbar also exports the whole tree to CSV or SVG.
 
 ## Local development (without Docker)
 
