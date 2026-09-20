@@ -1,0 +1,18 @@
+{% if results %}
+{% for r in results %}
+<button data-person-id="{{ r.id }}" data-name="{{ r.display_name }}" data-gender="{{ r.gender }}"
+        onclick="if(typeof zoomToNode==='function'){zoomToNode({{ r.id }})}else{location.href='{% url 'tree_view' %}?highlight={{ r.id }}'}"
+        class="w-full text-right px-4 py-3 hover:bg-slate-50 border-b border-slate-100 last:border-0 flex items-center gap-3 transition-all duration-200 group">
+    <span class="w-2 h-2 rounded-full flex-shrink-0 transition-transform group-hover:scale-150 {% if not r.is_alive %}bg-slate-300{% elif r.gender == 'M' %}bg-mint-500{% else %}bg-violet-400{% endif %}"></span>
+    <span class="text-sm text-slate-700 group-hover:font-medium">{{ r.display_name }}</span>
+    {% if not r.is_alive %}
+    <span class="text-[10px] text-slate-400 mr-auto px-1.5 py-0.5 rounded bg-slate-100">متوفى</span>
+    {% endif %}
+</button>
+{% endfor %}
+{% elif query %}
+<div class="px-4 py-8 text-center">
+    <svg class="w-8 h-8 text-slate-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+    <p class="text-sm text-slate-400">لا توجد نتائج</p>
+</div>
+{% endif %}

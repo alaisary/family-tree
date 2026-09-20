@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.env
+db.sqlite3
+*.sqlite3
+media/photos/*
+!media/photos/.gitkeep
+venv/
+.venv/
+*.log
+staticfiles/
+backups/
+
+# node build tooling
+node_modules/
+
+# agent / editor tooling
+.claude/
+.agents/

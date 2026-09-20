@@ -1,0 +1,13 @@
+# Core
+Django>=5.2,<6.1
+python-dotenv>=1.0
+gunicorn>=22.0
+whitenoise>=6.7
+
+# Database / images
+psycopg2-binary>=2.9
+Pillow>=10.0
+easy-thumbnails>=2.10        # thumbnails for Person.photo (tree nodes + avatars)
+
+# Error tracking (optional; only used when SENTRY_DSN is set)
+sentry-sdk>=2.0

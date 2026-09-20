@@ -1,0 +1,190 @@
+{% load thumbnail %}
+<div class="fc" x-data="{ showAdd: false, childGender: 'M', showMom: false }">
+    <!-- Header: Avatar + Name + Close -->
+    <div class="fc-header">
+        <div class="fc-avatar">
+            {% if person.photo %}
+            <img src="{% thumbnail person.photo '128x128' crop %}" alt="{{ person.first_name }}" loading="lazy" width="44" height="44">
+            {% else %}
+            <div class="fc-avatar-ph {% if person.gender == 'M' %}m{% else %}f{% endif %}">{{ person.first_name|slice:":1" }}</div>
+            {% endif %}
+        </div>
+        <div style="flex:1;text-align:right;">
+            <div class="fc-name">{{ person.first_name }}</div>
+            {% if person.father %}
+            <div class="fc-lineage">
+                {% if person.gender == 'F' %}بنت{% else %}بن{% endif %}
+                <a href="javascript:void(0)" onclick="zoomToNode({{ person.father.id }})">{{ person.father.first_name }}</a>
+            </div>
+            {% endif %}
+            <div class="fc-lineage" style="color:#8d4257;">
+                {% if person.mother %}
+                <span>الأم</span>
+                <a href="javascript:void(0)" onclick="zoomToNode({{ person.mother.id }})" style="color:#8d4257;">{{ person.mother.first_name }}</a>
+                <button @click="showMom = !showMom" title="تغيير الأم" style="background:none;border:none;cursor:pointer;color:#8d4257;font-size:11px;padding:0 2px;">✎</button>
+                {% else %}
+                <button @click="showMom = !showMom" style="background:none;border:none;cursor:pointer;color:#8d4257;font-size:11px;padding:0;">＋ تعيين الأم</button>
+                {% endif %}
+            </div>
+        </div>
+        <button class="fc-close" onclick="hidePersonDetail()" title="إغلاق" aria-label="إغلاق تفاصيل الفرد">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>
+
+    <!-- Badges -->
+    <div class="fc-badges">
+        <span class="fc-badge {% if person.is_alive %}alive{% else %}deceased{% endif %}">
+            <span class="d"></span>{% if person.is_alive %}حي{% else %}متوفى{% endif %}
+        </span>
+        <span class="fc-badge {% if person.gender == 'M' %}male{% else %}female{% endif %}">
+            {% if person.gender == 'M' %}ذكر{% else %}أنثى{% endif %}
+        </span>
+    </div>
+
+    <!-- Details -->
+    {% if person.birth_year or person.death_year or person.phone or person.house_location or person.education or person.occupation %}
+    <div class="fc-details">
+        {% if person.birth_year %}
+        <div class="fc-row">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
+            <span dir="ltr">{{ person.birth_year }}</span>
+        </div>
+        {% endif %}
+        {% if person.death_year %}
+        <div class="fc-row">
+            <span style="color:#9c9486;">الوفاة</span>
+            <span dir="ltr">{{ person.death_year }}</span>
+        </div>
+        {% endif %}
+        {% if person.phone %}
+        <div class="fc-row">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg>
+            <a href="tel:{{ person.phone }}" dir="ltr">{{ person.phone }}</a>
+        </div>
+        {% endif %}
+        {% if person.house_location %}
+        <div class="fc-row">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
+            <a href="{{ person.house_location }}" target="_blank">خريطة ↗</a>
+        </div>
+        {% endif %}
+        {% if person.education %}
+        <div class="fc-row">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342"/></svg>
+            <span>{{ person.education }}</span>
+        </div>
+        {% endif %}
+        {% if person.occupation %}
+        <div class="fc-row">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 00.75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 00-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0112 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 01-.673-.38m0 0A2.18 2.18 0 013 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 013.413-.387m7.5 0V5.25A2.25 2.25 0 0013.5 3h-3a2.25 2.25 0 00-2.25 2.25v.894m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+            <span>{{ person.occupation }}</span>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Children -->
+    {% if children %}
+    <div class="fc-children">
+        <div class="fc-clabel">الأبناء ({{ children|length }})</div>
+        {% for child in children %}
+        <button onclick="zoomToNode({{ child.id }})"
+                class="fc-child {% if child.gender == 'M' %}boy{% else %}girl{% endif %}">
+            <span class="d"></span>{{ child.first_name }}
+        </button>
+        {% endfor %}
+    </div>
+    <!-- Branch navigation -->
+    <div class="fc-actions" style="margin-bottom:10px">
+        <button onclick="focusBranch({{ person.id }})" class="fc-btn gold">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v6m0 0a3 3 0 100-6 3 3 0 000 6zm-6 6v3a3 3 0 003 3m9-6v3a3 3 0 01-3 3m-3 0a3 3 0 100 6 3 3 0 000-6zm-6 0a3 3 0 100 6 3 3 0 000-6zm12 0a3 3 0 100 6 3 3 0 000-6z"/></svg>
+            استكشاف الفرع
+        </button>
+        <button onclick="expandBranch({{ person.id }})" class="fc-btn ghost">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+            وسّع الفرع
+        </button>
+        <button onclick="collapseBranch({{ person.id }})" class="fc-btn ghost">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25"/></svg>
+            طيّ الفرع
+        </button>
+    </div>
+    {% endif %}
+
+    <div class="fc-sep"></div>
+
+    <!-- Actions -->
+    <div class="fc-actions">
+        <button hx-get="/api/person/{{ person.id }}/edit-form/" hx-target="#detail-content" hx-swap="innerHTML"
+                class="fc-btn primary">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+            تعديل
+        </button>
+
+        {% if can_add_child %}
+        <button @click="showAdd = true; childGender = 'M'" class="fc-btn primary">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+            ابن
+        </button>
+        <button @click="showAdd = true; childGender = 'F'" class="fc-btn gold">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+            ابنة
+        </button>
+        {% endif %}
+
+        <button hx-get="/api/person/{{ person.id }}/edit-log/" hx-target="#detail-content" hx-swap="innerHTML"
+                class="fc-btn ghost">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            سجل التعديلات
+        </button>
+
+        {% if can_delete %}
+        <button @click="if(confirm('هل أنت متأكد من حذف {{ person.first_name|escapejs }}؟')) {
+                    fetch('/api/person/{{ person.id }}/delete/', {
+                        method: 'POST',
+                        headers: {'X-CSRFToken': '{{ csrf_token }}'}
+                    }).then(r => { if(!r.ok) throw r; return r.json(); })
+                    .then(d => { if(d.success) location.reload(); else showToast(d.error || 'حدث خطأ', 'error'); })
+                    .catch(() => showToast('حدث خطأ في الشبكة', 'error'))
+                 }" class="fc-btn danger" aria-label="حذف الفرد">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+        </button>
+        {% endif %}
+    </div>
+
+    <!-- Inline Forms -->
+    {% if can_add_child %}
+    <div x-show="showAdd" x-cloak x-transition class="fc-form">
+        <form hx-post="/api/person/{{ person.id }}/add-child/"
+              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+              hx-swap="none"
+              @htmx:after-request="if(event.detail.successful) { location.reload(); }">
+            <input type="hidden" name="gender" :value="childGender">
+            <div class="fi">
+                <label x-text="childGender === 'M' ? 'ابن' : 'ابنة'"></label>
+                <input type="text" name="first_name" required placeholder="الاسم">
+                <button type="submit" class="fc-btn primary" style="padding:3px 8px">إضافة</button>
+                <button type="button" @click="showAdd = false" class="x">✕</button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    <div x-show="showMom" x-cloak x-transition class="fc-form">
+        <div class="fi" style="border-color:rgba(141,66,87,0.25);">
+            <label class="gl" style="color:#8d4257;">الأم</label>
+            <input type="text" oninput="searchMother({{ person.id }}, this.value)"
+                   placeholder="ابحث عن الأم (أنثى)" autocomplete="off">
+            <button type="button" id="mom-pick-{{ person.id }}" class="mom-pick-btn fc-btn ghost"
+                    style="padding:3px 7px" title="اختر من الشجرة" onclick="toggleMomPick({{ person.id }})">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
+            </button>
+            {% if person.mother %}
+            <button type="button" class="fc-btn ghost" style="padding:3px 8px" onclick="clearMother({{ person.id }})">إزالة</button>
+            {% endif %}
+            <button type="button" @click="showMom = false" class="x">✕</button>
+        </div>
+        <div id="mom-results-{{ person.id }}" style="display:none;max-height:180px;overflow:auto;margin-top:4px;border:1px solid #eee;border-radius:8px;"></div>
+    </div>
+</div>

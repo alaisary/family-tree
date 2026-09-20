@@ -1,0 +1,94 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{% block title %}{{ site_name }}{% endblock %}</title>
+    <script src="{% static 'tree/js/htmx.min.js' %}"></script>
+    <script defer src="{% static 'tree/js/alpine.min.js' %}"></script>
+    <link rel="stylesheet" href="{% static 'tree/css/fonts.css' %}">
+    <style>
+        /* Heritage design tokens */
+        :root{
+            --pf-ink: #16181d;
+            --pf-accent: #e0b352;
+            --pf-head: 'Tajawal', system-ui, sans-serif;
+            --pf-body: 'Tajawal', system-ui, sans-serif;
+            --pf-paper: #f6f6f4;
+            --pf-line: #e6e2d8;
+            --pf-muted: #6b6256;
+            --pf-faint: #9c9486;
+        }
+        html { scrollbar-gutter: stable; }
+        *, *::before, *::after { font-family: var(--pf-body); }
+        body { font-size: 16px; }   /* larger base for all-ages legibility */
+        [x-cloak] { display: none !important; }
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline-block; }
+        .htmx-request.htmx-indicator { display: inline-block; }
+
+        /* Heritage utility classes */
+        .pf-head{ font-family: var(--pf-head); }
+        .pf-text-ink{ color: var(--pf-ink); }
+
+        /* Warm scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d6cdbb; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #b9ac93; }
+
+        /* Heritage focus ring (ink) */
+        *:focus-visible {
+            outline: 2px solid var(--pf-ink);
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+
+        /* Shared component classes */
+        .mint-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.15s ease;
+            cursor: pointer;
+            border: none;
+            font-family: var(--pf-head);
+        }
+        .mint-btn-primary {
+            background: var(--pf-ink);
+            color: #fff;
+        }
+        .mint-btn-primary:hover { opacity: 0.9; }
+        .mint-input {
+            width: 100%;
+            padding: 9px 14px;
+            font-size: 14px;
+            border: 1px solid var(--pf-line);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--pf-ink);
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+            font-family: var(--pf-body);
+        }
+        .mint-input::placeholder { color: var(--pf-faint); }
+        .mint-input:focus {
+            border-color: var(--pf-ink);
+            box-shadow: 0 0 0 3px rgba(22,24,29,0.08);
+        }
+    </style>
+    <link rel="stylesheet" href="{% static 'tree/css/app.css' %}?v=2">
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="min-h-screen bg-[#f6f6f4]" dir="rtl">
+    {% block navbar %}{% endblock %}
+    {% block masthead %}{% endblock %}
+    {% block body %}{% endblock %}
+</body>
+</html>

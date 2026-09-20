@@ -1,0 +1,93 @@
+{% load thumbnail %}
+<div style="padding:18px 20px;color:#3a352c;font-family:'Tajawal','IBM Plex Sans Arabic',sans-serif;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+        <h3 style="font-size:1.2rem;font-weight:700;color:#16181d;margin:0;">تعديل {{ person.first_name }}</h3>
+        <button hx-get="/api/person/{{ person.id }}/" hx-target="#detail-content" hx-swap="innerHTML" class="fe-x" title="إغلاق">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>
+
+    <form hx-post="/api/person/{{ person.id }}/update/"
+          hx-target="#detail-content" hx-swap="innerHTML" hx-encoding="multipart/form-data"
+          x-data="{ fileName: '', deceased: {{ person.is_deceased|yesno:'true,false' }} }"
+          class="fe-form">
+        {% csrf_token %}
+
+        <div>
+            <label class="fe-label">الاسم</label>
+            <input type="text" name="first_name" value="{{ person.first_name }}" required class="fe-input">
+        </div>
+
+        <div class="fe-grid2">
+            <div>
+                <label class="fe-label">سنة الميلاد</label>
+                <input type="number" name="birth_year" value="{{ person.birth_year|default:'' }}" dir="ltr" placeholder="—" class="fe-input">
+            </div>
+            <div>
+                <label class="fe-label">الهاتف</label>
+                <input type="tel" name="phone" value="{{ person.phone }}" dir="ltr" placeholder="+968…" class="fe-input">
+            </div>
+        </div>
+
+        <div>
+            <label class="fe-label">الحالة</label>
+            <div class="fe-switch-row">
+                <span class="lbl" x-text="deceased ? 'متوفّى' : 'على قيد الحياة'"></span>
+                <label class="fe-switch">
+                    <input type="checkbox" name="is_deceased" x-model="deceased">
+                    <span class="track"></span>
+                </label>
+            </div>
+            <div x-show="deceased" x-cloak style="margin-top:10px;">
+                <label class="fe-label">سنة الوفاة <span style="color:#9c9486;font-weight:500;">(إن عُرفت)</span></label>
+                <input type="number" name="death_year" value="{{ person.death_year|default:'' }}" dir="ltr" :disabled="!deceased" placeholder="—" class="fe-input">
+            </div>
+        </div>
+
+        <div class="fe-grid2">
+            <div>
+                <label class="fe-label">التعليم</label>
+                <input type="text" name="education" value="{{ person.education }}" class="fe-input">
+            </div>
+            <div>
+                <label class="fe-label">المهنة</label>
+                <input type="text" name="occupation" value="{{ person.occupation }}" class="fe-input">
+            </div>
+        </div>
+
+        <div>
+            <label class="fe-label">موقع المنزل</label>
+            <input type="url" name="house_location" value="{{ person.house_location }}" dir="ltr" placeholder="https://maps.google.com/…" class="fe-input">
+        </div>
+
+        <div>
+            <label class="fe-label">الصورة</label>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                {% if person.photo %}
+                <img src="{% thumbnail person.photo '96x96' crop %}" loading="lazy" width="42" height="42" style="width:42px;height:42px;border-radius:10px;object-fit:cover;border:1px solid #e6e2d8;">
+                {% endif %}
+                <label class="fe-file">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 7.5L12 3m0 0L7.5 7.5M12 3v13.5"/></svg>
+                    اختر صورة
+                    <input type="file" name="photo" accept="image/*" style="display:none" @change="fileName = $event.target.files[0]?.name || ''">
+                </label>
+                <span style="font-size:13px;color:#6b6256;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" x-text="fileName"></span>
+                {% if person.photo %}
+                <button type="button"
+                        hx-post="/api/person/{{ person.id }}/delete-photo/"
+                        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                        hx-target="#detail-content" hx-swap="innerHTML"
+                        hx-confirm="هل تريد حذف الصورة؟"
+                        style="font-size:12px;font-weight:600;color:#c8102e;background:#fbeceb;border:1px solid #f3c9c9;padding:7px 12px;border-radius:10px;cursor:pointer;font-family:'Tajawal',sans-serif;">حذف</button>
+                {% endif %}
+            </div>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-top:4px;">
+            <button type="submit" class="fe-save">
+                <svg style="width:16px;height:16px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                حفظ التغييرات
+            </button>
+        </div>
+    </form>
+</div>

@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: familytree
+      POSTGRES_USER: familytree
+      POSTGRES_PASSWORD: familytree
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U familytree"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SECRET_KEY: dev-secret-key-change-in-production
+      DEBUG: "True"
+      ALLOWED_HOSTS: "*"
+      DATABASE_URL: postgres://familytree:familytree@db:5432/familytree
+      SECURE_HARDENING: "False"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - media:/app/media
+
+volumes:
+  pgdata:
+  media:

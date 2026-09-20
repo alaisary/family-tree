@@ -1,0 +1,1776 @@
+{% extends "tree/base.html" %}
+{% load static %}
+{% block title %}الشجرة — {{ site_name }}{% endblock %}
+
+{% block extra_head %}
+<script src="{% static 'tree/js/d3.v7.min.js' %}"></script>
+<style>
+    /* Scoped to this page; other site sections retain their existing theme. */
+    :root {
+        --pf-ink: oklch(28% 0.012 255);
+        --pf-muted: oklch(47% 0.012 255);
+        --pf-faint: oklch(51% 0.012 255);
+        --pf-line: oklch(89% 0.008 255);
+        --pf-paper: oklch(97% 0.005 255);
+        --pf-accent: oklch(52% 0.12 255);
+        --tree-surface: oklch(99% 0.003 255);
+        --tree-selected: oklch(95% 0.025 255);
+    }
+    html { scrollbar-gutter: auto; }
+    body.min-h-screen { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    #tree-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; margin: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+    .tree-wrapper { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; background: var(--tree-surface); color: var(--pf-ink); container: tree-workspace / size; }
+    .tree-topbar { flex-shrink: 0; background: var(--tree-surface); border-bottom: 1px solid var(--pf-line); }
+    .tree-heading { display: flex; align-items: center; gap: 16px; padding: 14px 28px 8px; flex-shrink: 0; }
+    .tree-heading-title { min-width: 0; }
+    .tree-heading h1 { font-size: 20px; line-height: 1.3; font-weight: 700; margin: 0; }
+    .tree-heading p { color: var(--pf-muted); font-size: 12px; margin-top: 2px; }
+    .tree-search { position: relative; margin-inline-start: auto; width: min(280px, 100%); }
+    .tree-search-field { display: flex; align-items: center; gap: 8px; border: 1px solid transparent; border-radius: 20px; padding: 0 12px; background: var(--pf-paper); transition: border-color .15s, box-shadow .15s, background .15s; }
+    .tree-search-field:focus-within { border-color: var(--pf-line); background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+    .tree-search-field svg { width: 15px; height: 15px; color: var(--pf-faint); flex-shrink: 0; }
+    .tree-search input { width: 100%; min-width: 0; height: 34px; background: transparent; border: 0; outline: 0; font-size: 13px; }
+    .tree-search input::placeholder { color: var(--pf-faint); }
+    .tree-search-results { position: absolute; inset-inline: 0; top: calc(100% + 8px); background: var(--tree-surface); border: 1px solid var(--pf-line); border-radius: 10px; box-shadow: 0 8px 24px oklch(28% 0.012 255 / .12); max-height: min(360px, 50cqh); overflow-y: auto; z-index: 60; }
+    .tree-search-results:empty { display: none; }
+    .tree-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 28px 12px; flex-shrink: 0; flex-wrap: wrap; }
+    .tree-focusbar { display: flex; align-items: center; gap: 16px; padding: 10px 28px; flex-shrink: 0; border-bottom: 1px solid var(--pf-line); background: var(--tree-selected); }
+    .tree-focus-title { flex: 1; min-width: 0; }
+    .tree-focus-title strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 600; }
+    .tree-focus-title small { display: block; color: var(--pf-muted); font-size: 12px; }
+    .tree-generations { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .tree-generations select { min-height: 44px; padding: 6px 10px; border: 1px solid var(--pf-line); border-radius: 7px; background: var(--tree-surface); color: var(--pf-ink); font: inherit; }
+    .tree-tools { display: flex; align-items: center; gap: 6px; }
+    .tree-tool { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--pf-line); border-radius: 7px; background: var(--tree-surface); color: var(--pf-ink); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s; }
+    .tree-tool svg { width: 17px; height: 17px; flex-shrink: 0; }
+    .tree-tool:hover { background: var(--pf-paper); border-color: var(--pf-faint); }
+    .tree-tool:active { background: var(--tree-selected); }
+    .tree-tool:disabled { opacity: .45; cursor: not-allowed; }
+    .tree-tool-primary { background: var(--pf-ink); border-color: var(--pf-ink); color: var(--tree-surface); }
+    .tree-tool-primary:hover { background: var(--pf-muted); color: var(--tree-surface); }
+    .tree-more { position: relative; }
+    .tree-more summary { list-style: none; }
+    .tree-more summary::-webkit-details-marker { display: none; }
+    .tree-menu { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; z-index: 45; width: 208px; max-height: max(100px, calc(100dvh - 220px)); overflow-y: auto; background: var(--tree-surface); border: 1px solid var(--pf-line); padding: 6px; border-radius: 10px; box-shadow: 0 8px 24px oklch(28% 0.012 255 / .12); }
+    .tree-menu button { width: 100%; border: 0; justify-content: flex-start; }
+    .tree-menu hr { border-color: var(--pf-line); margin: 6px; }
+    .tree-tool.ctrl-active { color: var(--pf-accent); background: var(--tree-selected); }
+    #relation-panel { max-height: calc(100% - 24px); overflow-y: auto; }
+    .tree-stage { min-height: 0; }
+    .tree-status { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 28px max(10px, env(safe-area-inset-bottom)); border-top: 1px solid var(--pf-line); font-size: 12px; color: var(--pf-muted); flex-shrink: 0; }
+    .tree-legend { display: flex; align-items: center; gap: 18px; }
+    .tree-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .tree-legend i { width: 9px; height: 9px; border-radius: 50%; background: var(--pf-accent); }
+    .tree-legend i.deceased { background: var(--pf-paper); border: 1px dashed var(--pf-muted); }
+    .tree-zoom { position: absolute; bottom: 20px; left: 20px; z-index: 15; display: flex; align-items: center; padding: 4px; border: 1px solid var(--pf-line); border-radius: 9px; background: var(--tree-surface); box-shadow: 0 2px 6px oklch(28% 0.012 255 / .05); direction: ltr; }
+    .tree-zoom button { width: 40px; height: 40px; border: 0; background: transparent; border-radius: 5px; cursor: pointer; display: grid; place-items: center; }
+    .tree-zoom button:hover { background: var(--pf-paper); }
+    .tree-zoom svg { width: 18px; height: 18px; }
+    .tree-zoom output { min-width: 48px; font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
+    .tree-wrapper [disabled] { cursor: not-allowed; }
+    .tree-wrapper:has(#tree-loader) .tree-toolbar { pointer-events: none; opacity: .6; }
+    .tree-wrapper button:focus-visible, .tree-wrapper summary:focus-visible { outline-color: var(--pf-accent); }
+    #tree-container {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        position: relative;
+        background: var(--pf-paper);
+        background-image: radial-gradient(circle, oklch(83% 0.01 255) .7px, transparent .7px);
+        background-size: 24px 24px;
+        cursor: grab;
+    }
+    #tree-container:active { cursor: grabbing; }
+    #tree-container svg { position: relative; z-index: 1; touch-action: none; }
+
+    .node rect, .node circle.node-shape {
+        cursor: pointer;
+        transition: filter 0.2s, opacity 0.2s;
+    }
+    .node rect { rx: 10; ry: 10; }
+    .node rect:hover, .node circle.node-shape:hover { stroke: var(--pf-accent) !important; }
+    .node rect:active, .node circle.node-shape:active { filter: brightness(.96); transition: filter 0s; }
+    .node .toggle-circle:active circle.toggle-face { fill: var(--tree-selected); transition: fill 0s; }
+    .node .person-hit:focus-visible { outline: none; stroke: var(--pf-accent) !important; stroke-width: 3px !important; }
+    .node .toggle-circle:focus-visible { outline: none; }
+    .node .toggle-circle:focus-visible circle.toggle-face { stroke: var(--pf-accent) !important; stroke-width: 3px !important; }
+    .tree-overview .node-meta { visibility: hidden; }
+    .tree-overview .node .person-hit { filter: none !important; }
+    .node text { font-family: 'Tajawal', 'IBM Plex Sans Arabic', sans-serif; }
+    .node text.label { pointer-events: none; }
+    .node .toggle-circle { cursor: pointer; transition: opacity 0.2s; }
+    .node .toggle-circle:hover { opacity: 0.9; }
+    .node--search-result rect, .node--search-result circle.node-shape {
+        stroke: #4775ab !important;
+        stroke-width: 2.5px !important;
+    }
+    /* White separator ring + coloured aura so the endpoint stays visible on ANY
+       node fill (gold "you" node for A, burgundy women's nodes for B). */
+    .node--relation-a rect, .node--relation-a circle.node-shape {
+        stroke: #fff !important;
+        stroke-width: 3px !important;
+        filter: drop-shadow(0 0 2.5px #e0b352) drop-shadow(0 0 9px rgba(224,179,82,0.85)) !important;
+    }
+    .node--relation-b rect, .node--relation-b circle.node-shape {
+        stroke: #fff !important;
+        stroke-width: 3px !important;
+        filter: drop-shadow(0 0 2.5px #8d4257) drop-shadow(0 0 9px rgba(141,66,87,0.85)) !important;
+    }
+    .node--relation-path rect, .node--relation-path circle.node-shape {
+        stroke: #caa24a !important;
+        stroke-width: 2.5px !important;
+        filter: drop-shadow(0 0 8px rgba(202,162,74,0.4)) !important;
+    }
+    .link--relation {
+        stroke: #caa24a !important;
+        stroke-width: 3px !important;
+        stroke-opacity: 0.85 !important;
+    }
+    .rel-pick-btn.rel-pick-active {
+        color: #16181d !important;
+        background: #e0b352;
+        border-color: #e0b352 !important;
+        box-shadow: 0 0 0 3px rgba(224,179,82,0.25);
+        animation: rel-pick-pulse 1.4s ease-in-out infinite;
+    }
+    #rel-pick-b.rel-pick-active {
+        color: #fff !important;
+        background: #8d4257;
+        border-color: #8d4257 !important;
+        box-shadow: 0 0 0 3px rgba(141,66,87,0.25);
+    }
+    .mom-pick-btn.mom-pick-active {
+        color: #fff !important;
+        background: #8d4257 !important;
+        border-color: #8d4257 !important;
+        box-shadow: 0 0 0 3px rgba(141,66,87,0.25);
+        animation: rel-pick-pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes rel-pick-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.65; } }
+    .link {
+        fill: none;
+        stroke: #bdc5cf;
+        stroke-width: 1.5px;
+    }
+    .link--lineage {
+        stroke: #7899c0;
+        stroke-width: 2px;
+    }
+
+    #floating-detail {
+        position: absolute;
+        z-index: 40;
+        pointer-events: auto;
+        width: 360px;
+        max-width: calc(100% - 24px);
+        max-height: calc(100% - 32px);
+        top: 16px;
+        left: 16px;
+        overflow-y: auto;
+        background: var(--tree-surface);
+        border: 1px solid var(--pf-line);
+        border-radius: 12px;
+        box-shadow: 0 6px 24px oklch(28% 0.012 255 / .1);
+        opacity: 0;
+        transform: scale(0.9) translateY(8px);
+        transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #floating-detail.visible {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+    #floating-detail::-webkit-scrollbar { width: 7px; }
+    #floating-detail::-webkit-scrollbar-thumb { background: #d6cdbb; border-radius: 7px; border: 2px solid #fff; }
+    #floating-detail::-webkit-scrollbar-thumb:hover { background: #b9ac93; }
+    #floating-detail::-webkit-scrollbar-track { background: transparent; }
+    .node image { cursor: pointer; }
+
+    .fc { font-family: 'Tajawal','IBM Plex Sans Arabic', sans-serif; color: var(--pf-ink); padding: 22px; }
+    .fc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .fc-avatar { width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0; overflow: hidden; border: 2px solid #e6e2d8; }
+    .fc-avatar img { width:100%;height:100%;object-fit:cover; }
+    .fc-avatar-ph { width:100%;height:100%;display:flex;align-items:center;justify-content:center; font-size:22px;font-weight:600;color:var(--pf-ink); }
+    .fc-avatar-ph.m { background: #e3eaf3; }
+    .fc-avatar-ph.f { background: #eedfe5; }
+    .fc-name { font-size:1.5rem;font-weight:700;color:var(--pf-ink);line-height:1.5; overflow-wrap:anywhere; }
+    .fc-lineage { font-size:13px;color:var(--pf-muted);margin-top:3px; }
+    .fc-lineage a { color:var(--pf-accent);text-decoration:none;transition:color 0.2s; }
+    .fc-lineage a:hover { color:#6f541a; }
+    .fc-close { margin-inline-start:auto;width:36px;height:36px;flex-shrink:0;border-radius:8px; display:flex;align-items:center;justify-content:center; color:var(--pf-muted);cursor:pointer;border:1px solid var(--pf-line); background:transparent;transition:background 0.15s; }
+    .fc-close:hover { color:#3a352c;background:#f2efe8; }
+    .fc-badges { display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px; }
+    .fc-badge { display:inline-flex;align-items:center;gap:5px;padding:4px 8px; border-radius:5px;font-size:12px;font-weight:500; }
+    .fc-badge .d { width:5px;height:5px;border-radius:50%; }
+    .fc-badge.alive { background:#eef3ea;color:#3f6b2e; }
+    .fc-badge.alive .d { background:#5a8a3c; }
+    .fc-badge.deceased { background:#f2efe8;color:#6b6256; }
+    .fc-badge.deceased .d { background:#9c9486; }
+    .fc-badge.male { background:#f1f0ee;color:#2b2f38; }
+    .fc-badge.female { background:#f7edf0;color:#8d4257; }
+    .fc-sep { height:1px;margin:16px 0; background:var(--pf-line); }
+    .fc-details { display:flex;flex-direction:column;gap:12px;margin:20px 0; }
+    .fc-row { display:flex;align-items:center;gap:10px;font-size:14px; overflow-wrap:anywhere; }
+    .fc-row svg { width:13px;height:13px;color:#9c9486;flex-shrink:0; }
+    .fc-row span { color:#3a352c; }
+    .fc-row a { color:#8a6a1f;text-decoration:none;transition:color 0.2s; }
+    .fc-row a:hover { color:#6f541a; }
+    .fc-children { display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px; max-height:148px;overflow-y:auto;padding-left:2px; }
+    .fc-children::-webkit-scrollbar { width:5px; }
+    .fc-children::-webkit-scrollbar-thumb { background:#e0d8c8;border-radius:5px; }
+    .fc-clabel { font-size:13px;font-weight:600;color:var(--pf-muted);width:100%;margin:8px 0; }
+    .fc-child { display:inline-flex;align-items:center;gap:6px;padding:8px 12px; min-height:40px; border-radius:6px;font-size:14px;cursor:pointer; transition:background .15s;border:1px solid transparent; background:transparent;color:var(--pf-ink);font-family:'Tajawal','IBM Plex Sans Arabic',sans-serif; }
+    .fc-child.boy { border-color:#e0ddd5; }
+    .fc-child.boy:hover { background:#f4f2ee;border-color:#cfc9bc;transform:translateY(-1px); }
+    .fc-child.girl { border-color:#ecd9df;color:#8d4257; }
+    .fc-child.girl:hover { background:#f7edf0;border-color:#e0c2cc;transform:translateY(-1px); }
+    .fc-child .d { width:4px;height:4px;border-radius:50%; }
+    .fc-child.boy .d { background:#2b2f38; }
+    .fc-child.girl .d { background:#8d4257; }
+    .fc-actions { display:flex;flex-wrap:wrap;gap:8px; }
+    .fc-btn { display:inline-flex;align-items:center;justify-content:center;gap:6px; padding:8px 12px;min-height:40px;border-radius:7px;font-size:13px;font-weight:500; cursor:pointer;transition:background .15s;border:none;white-space:nowrap; font-family:'Tajawal','IBM Plex Sans Arabic',sans-serif; }
+    .fc-btn svg { width:15px;height:15px;flex-shrink:0; }
+    .fc-btn.primary { background:#16181d;color:white; }
+    .fc-btn.primary:hover { opacity:0.9;transform:translateY(-1px);box-shadow:0 3px 12px rgba(22,24,29,0.25); }
+    .fc-btn.gold { background:var(--tree-selected);color:var(--pf-accent); }
+    .fc-btn.gold:hover { background:var(--pf-line); }
+    .fc-btn.ghost { background:var(--tree-surface);color:var(--pf-muted);border:1px solid var(--pf-line); }
+    .fc-btn.ghost:hover { background:var(--pf-paper);border-color:var(--pf-faint); }
+    .fc-btn.danger { background:#fbeceb;color:#c8102e;border:1px solid #f3c9c9; }
+    .fc-btn.danger:hover { background:#f7dcdb;border-color:#eaa9a9; }
+    .fc-form { margin-top:8px;animation:fc-in 0.2s cubic-bezier(0.16,1,0.3,1); }
+    .fc-form .fi { display:flex;align-items:center;gap:6px;padding:6px 10px; border-radius:10px;background:#f4f2ee;border:1px solid #e6e2d8; }
+    .fc-form .fi.gold { background:#f8f0db;border-color:#ecdcb4; }
+    .fc-form label { font-size:9px;font-weight:600;white-space:nowrap;color:#9c9486; }
+    .fc-form label.gl { color:#9a6b16; }
+    .fc-form input { flex:1;padding:4px 8px;border-radius:6px;border:1px solid #e6e2d8; background:white;color:#16181d;font-size:12px;outline:none; font-family:'Tajawal','IBM Plex Sans Arabic',sans-serif;min-width:0; }
+    .fc-form input:focus { border-color:#16181d;box-shadow:0 0 0 2px rgba(22,24,29,0.1); }
+    .fc-form input::placeholder { color:#c4bdb0; }
+    .fc-form .x { background:none;border:none;color:#94a3b8;cursor:pointer; font-size:14px;padding:2px;font-family:sans-serif; }
+    .fc-form .x:hover { color:#334155; }
+    @keyframes fc-in { from { opacity:0;transform:translateY(-4px); } to { opacity:1;transform:translateY(0); } }
+
+    /* Modern edit form (person_edit_form) */
+    .fe-form { display:flex; flex-direction:column; gap:14px; }
+    .fe-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .fe-label { display:block;font-size:12px;font-weight:600;color:#6b6256;margin-bottom:6px; }
+    .fe-input { width:100%;padding:9px 12px;border-radius:10px;border:1px solid #e6e2d8;background:#fdfcfa;color:#16181d;font-size:14px;outline:none;font-family:'Tajawal','IBM Plex Sans Arabic',sans-serif;transition:border-color .15s ease, box-shadow .15s ease, background .15s ease; }
+    .fe-input:focus { border-color:#16181d;background:#fff;box-shadow:0 0 0 3px rgba(22,24,29,0.07); }
+    .fe-input::placeholder { color:#bdb6a8; }
+    .fe-switch-row { display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 14px;border-radius:10px;border:1px solid #e6e2d8;background:#fdfcfa; }
+    .fe-switch-row .lbl { font-size:14px;font-weight:600;color:#16181d; }
+    .fe-switch { position:relative;display:inline-block;width:42px;height:24px;flex-shrink:0; }
+    .fe-switch input { position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;z-index:2; }
+    .fe-switch .track { position:absolute;inset:0;background:#dcd6c8;border-radius:999px;transition:background .2s ease; }
+    .fe-switch .track::before { content:'';position:absolute;width:18px;height:18px;top:3px;right:3px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:right .2s ease; }
+    .fe-switch input:checked ~ .track { background:#8d4257; }
+    .fe-switch input:checked ~ .track::before { right:21px; }
+    .fe-file { display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:10px;border:1px solid #e6e2d8;background:#fff;color:#3a352c;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s, border-color .15s; }
+    .fe-file:hover { background:#faf8f3;border-color:#d6cdbb; }
+    .fe-file svg { width:15px;height:15px; }
+    .fe-save { flex:1;justify-content:center;padding:11px 22px;border-radius:11px;background:var(--pf-ink);color:#fff;font-size:14px;font-weight:700;cursor:pointer;border:none;font-family:'Tajawal',sans-serif;display:inline-flex;align-items:center;gap:7px;transition:opacity .15s, transform .1s; }
+    .fe-save:hover { opacity:.92; }
+    .fe-save:active { transform:scale(0.99); }
+    .fe-cancel { padding:11px 18px;font-size:14px;font-weight:600;color:#6b6256;background:#f2efe8;border:1px solid #e6e2d8;border-radius:11px;cursor:pointer;font-family:'Tajawal',sans-serif;transition:all .15s; }
+    .fe-cancel:hover { color:#16181d;background:#ece8df; }
+    .fe-x { width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:9px;border:none;background:transparent;color:#9c9486;cursor:pointer;transition:all .15s; }
+    .fe-x:hover { background:#f2efe8;color:#3a352c; }
+
+    @keyframes tree-loading {
+        0% { transform: scale(0.8); opacity: 0.4; }
+        50% { transform: scale(1); opacity: 1; }
+        100% { transform: scale(0.8); opacity: 0.4; }
+    }
+    .tree-loader { animation: tree-loading 1.5s ease-in-out infinite; }
+
+    #toast-container {
+        position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+        z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center;
+        pointer-events: none;
+    }
+    .toast {
+        padding: 10px 20px; border-radius: 12px; font-size: 13px;
+        font-family: 'IBM Plex Sans Arabic', sans-serif; color: #334155;
+        backdrop-filter: blur(16px); pointer-events: auto;
+        animation: toast-in 0.3s cubic-bezier(0.16,1,0.3,1);
+        max-width: calc(100cqw - 2rem);
+    }
+    .toast.info { background: rgba(255,255,255,0.96); border: 1px solid #e6e2d8; color: #3a352c; box-shadow: 0 4px 14px rgba(22,24,29,0.10); }
+    .toast.error { background: rgba(251,236,235,0.96); border: 1px solid #f3c9c9; color: #c8102e; }
+    .toast.success { background: rgba(238,243,234,0.96); border: 1px solid #d6e3cb; color: #3f6b2e; }
+    @keyframes toast-in { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+    .controls-group {
+        background: var(--tree-surface);
+        border: 1px solid var(--pf-line);
+        box-shadow: 0 2px 8px rgba(22,24,29,0.06);
+    }
+    /* The same view switch is visible at every screen size. */
+    .ctrl-seg { display:flex; gap:3px; padding:3px; margin:0; background:var(--pf-paper); border:1px solid var(--pf-line); border-radius:8px; }
+    .ctrl-seg button { flex:1; display:flex; align-items:center; justify-content:center; gap:5px;
+        padding:6px 14px; min-height:32px; border-radius:5px; border:none; cursor:pointer; background:transparent;
+        color:var(--pf-muted); font-family:var(--pf-head); font-size:12px; font-weight:500; transition:all .15s ease; }
+    .ctrl-seg button svg { width:14px; height:14px; }
+    .ctrl-seg button:hover { color:var(--pf-ink); }
+    .ctrl-seg button.ctrl-seg-on { background:var(--tree-surface); color:var(--pf-ink); box-shadow:0 1px 2px rgba(22,24,29,.08); }
+
+    .mobile-controls { display: flex !important; }
+    @container tree-workspace (min-width: 768px) {
+        .mobile-controls { display: none !important; }
+    }
+    @container tree-workspace (max-width: 999px) {
+        .tree-toolbar .desktop-only { display: none; }
+    }
+    @media (max-width: 767px) {
+        .tree-heading { padding: 10px 16px 6px; gap: 10px; }
+        .tree-heading h1 { font-size: 17px; }
+        .tree-heading p { font-size: 11px; }
+        .tree-heading-title { flex-shrink: 0; }
+        .tree-search { flex: 1; width: auto; min-width: 0; margin-inline-start: 0; }
+        .tree-toolbar { padding: 4px 16px 10px; gap: 6px; }
+        .tree-toolbar .desktop-only { display: none; }
+        .tree-more-label { display: none; }
+        .tree-more summary { width: 40px; min-height: 36px; padding: 6px 8px; }
+    }
+    @container tree-workspace (max-width: 767px) {
+        .tree-menu { max-height: max(100px, calc(100cqh - 240px)); }
+        .tree-focusbar { padding: 8px 12px; gap: 8px 12px; flex-wrap: wrap; }
+        .tree-focus-title { flex-basis: calc(100% - 150px); }
+        .tree-focusbar > .tree-tool { font-size: 12px; }
+        .tree-generations { width: 100%; justify-content: space-between; }
+        .tree-generations select { flex: 1; max-width: 200px; }
+        .tree-tool { min-height: 44px; padding: 8px 10px; }
+        .ctrl-seg button { min-height: 36px; padding: 6px 12px; }
+        .tree-status { padding: 8px 16px; flex-wrap: wrap; gap: 8px; }
+        .tree-status .tree-legend { gap: 10px; }
+        .tree-status .tree-hint { display: none; }
+        .tree-zoom { left: 12px; bottom: 16px; }
+        .tree-zoom button { width: 36px; height: 44px; }
+        .tree-zoom output { min-width: 40px; }
+        .mobile-controls .controls-group { width: 240px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; max-height: max(80px, calc(100cqh - 300px)); overflow-y: auto; }
+        .mobile-controls .controls-group button { min-height: 44px; min-width: 44px; }
+        .mobile-controls button { backdrop-filter: none; box-shadow: none; }
+        .fc { padding: 20px; }
+        .fc-close, .fc-btn, .fc-child { min-height: 44px; }
+        #floating-detail {
+            position: absolute !important;
+            bottom: 0 !important; left: 0 !important; right: 0 !important; top: auto !important;
+            width: 100% !important; max-width: none; max-height: min(70cqh, 100%);
+            border-radius: 20px 20px 0 0;
+        }
+    }
+    @container tree-workspace (max-height: 500px) and (min-width: 520px) {
+        .tree-heading { padding: 6px 12px 2px; }
+        .tree-heading p { display: none; }
+        .tree-toolbar { padding: 2px 12px 8px; }
+        .tree-toolbar .desktop-only, .tree-more-label { display: none; }
+        .tree-more summary { width: 44px; }
+        .tree-status { display: none; }
+        .tree-focusbar { padding: 6px 12px; flex-wrap: nowrap; gap: 12px; }
+        .tree-focus-title { flex: 1; }
+        .tree-focus-title small { display: none; }
+        .tree-focusbar > .tree-tool { font-size: 12px; }
+        .tree-generations { width: auto; font-size: 12px; }
+        .tree-generations label { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+        .tree-generations select { width: 112px; }
+        .tree-search-results, .tree-menu { max-height: calc(100cqh - 84px); }
+        .mobile-controls .controls-group { max-height: calc(100cqh - 140px); }
+        #floating-detail { width: 320px !important; max-width: calc(100% - 24px); max-height: calc(100% - 24px); top: 12px !important; bottom: auto !important; left: 12px !important; right: auto !important; border-radius: 12px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .tree-wrapper * { animation: none !important; transition: none !important; }
+    }
+
+</style>
+{% endblock %}
+
+{% block masthead %}{% endblock %}
+
+{% block body %}
+<div id="tree-viewport" x-data="treeApp()">
+<main class="flex flex-col tree-wrapper">
+    <div id="toast-container" role="status" aria-live="polite"></div>
+    <header class="tree-topbar pf-head">
+    <div class="tree-heading">
+        <div class="tree-heading-title">
+            <h1>{{ site_name }}</h1>
+            <p x-text="totalPeople ? formatNumber(totalPeople) + ' ' + peopleWord(totalPeople) + ' · ' + formatNumber(generations) + ' ' + generationWord(generations) : 'استكشف أفراد العائلة'"></p>
+        </div>
+        <div class="tree-search" x-data="{ resultsOpen: false, query: '' }"
+             @click.outside="resultsOpen = false" @keydown.escape.stop="resultsOpen = false"
+             @focusout="if ($event.relatedTarget && !$el.contains($event.relatedTarget)) resultsOpen = false">
+            <div class="tree-search-field">
+                <svg aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" stroke-width="1.6"/><path d="m16 16 4.5 4.5" stroke-width="1.6" stroke-linecap="round"/></svg>
+                <input id="tree-search" type="search" name="q" autocomplete="off" x-model="query"
+                       placeholder="ابحث بالاسم أو النسب..." aria-label="البحث عن فرد في العائلة"
+                       aria-controls="search-results" :aria-expanded="resultsOpen && query.trim().length >= 2"
+                       hx-get="{% url 'search_persons' %}" hx-trigger="input changed delay:300ms, search"
+                       hx-target="#search-results" hx-sync="this:replace"
+                       @input="resultsOpen = true" @focus="resultsOpen = true"
+                       @keydown.arrow-down.prevent="$el.closest('.tree-search').querySelector('#search-results button')?.focus()">
+            </div>
+            <div id="search-results" class="tree-search-results" x-cloak
+                 x-show="resultsOpen && query.trim().length >= 2" @click="if ($event.target.closest('button')) resultsOpen = false"></div>
+        </div>
+    </div>
+    <div class="tree-toolbar" aria-label="أدوات الشجرة">
+        <div class="tree-tools">
+            <div class="ctrl-seg" role="group" aria-label="طريقة العرض">
+                <button @click="setMode('cards')" :aria-pressed="viewMode === 'cards'" :class="viewMode === 'cards' ? 'ctrl-seg-on' : ''">أسماء</button>
+                <button @click="setMode('circle-photo')" :aria-pressed="viewMode === 'circle-photo'" :class="viewMode === 'circle-photo' ? 'ctrl-seg-on' : ''">صور</button>
+            </div>
+            <button class="tree-tool desktop-only" @click="collapseAll()" :disabled="!ready">العرض الأساسي</button>
+        </div>
+        <div class="tree-tools">
+            <button class="tree-tool desktop-only" onclick="toggleRelationPanel()" id="rel-btn-desktop">صلة القرابة</button>
+            <details class="tree-more" @click.outside="$el.open = false" @keydown.escape.stop="$el.open = false">
+                <summary class="tree-tool" aria-label="المزيد من أدوات الشجرة"><span class="tree-more-label">المزيد</span><svg aria-hidden="true" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></summary>
+                <div class="tree-menu" @click="if ($event.target.closest('button')) $el.closest('details').open = false">
+                    <button class="tree-tool" @click="expandAll()" :disabled="!ready" x-text="focusName ? 'بسط هذا الفرع بالكامل' : 'بسط جميع الفروع'">بسط جميع الفروع</button>
+                    <button class="tree-tool" @click="collapseAll()" :disabled="!ready">العودة للعرض الأساسي</button>
+                    <button class="tree-tool" id="branch-pick-expand" onclick="toggleBranchPickMode('expand')" :disabled="!ready">اختر فرعًا لبسطه</button>
+                    <button class="tree-tool" id="branch-pick-collapse" onclick="toggleBranchPickMode('collapse')" :disabled="!ready">اختر فرعًا لطيّه</button>
+                    <hr>
+                    <button class="tree-tool" onclick="toggleRelationPanel()" :disabled="!ready">اكتشف صلة القرابة</button>
+                    <button class="tree-tool" @click="exportSVG()" :disabled="!ready">تصدير الشجرة SVG</button>
+                </div>
+            </details>
+        </div>
+    </div>
+    </header>
+
+    <section class="tree-focusbar" x-show="focusName" x-cloak aria-label="استكشاف الفرع">
+        <div class="tree-focus-title" role="status">
+            <strong x-text="'فرع ' + focusName"></strong>
+            <small x-text="formatNumber(focusCount) + ' ' + peopleWord(focusCount) + ' في هذا الفرع'"></small>
+        </div>
+        <button id="exit-branch-focus" class="tree-tool" @click="exitBranchFocus()">العودة للشجرة كاملة</button>
+        <div class="tree-generations">
+            <label for="generation-limit">الأجيال المعروضة</label>
+            <select id="generation-limit" x-model="generationLimit" @change="setGenerationLimit($event.target.value)">
+                <option value="2">جيلان</option>
+                <option value="3">٣ أجيال</option>
+                <option value="4">٤ أجيال</option>
+                <option value="all">كل الأجيال</option>
+                <option value="custom" disabled x-show="generationLimit === 'custom'">عرض مخصص</option>
+            </select>
+        </div>
+    </section>
+    <div class="tree-stage flex flex-col flex-1 overflow-hidden relative">
+        <!-- Mobile Controls -->
+        <div class="mobile-controls absolute z-30 flex-col gap-2 items-end" style="bottom: 16px; right: 16px;" x-data="{ mobileToolbar: false }" @click.outside="mobileToolbar = false" @keydown.escape.stop="mobileToolbar = false">
+            <div x-show="mobileToolbar" x-cloak x-transition class="controls-group rounded-xl"
+                 @click="if ($event.target.closest('button')) mobileToolbar = false">
+                <button @click="setMode('cards')" :class="viewMode === 'cards' ? 'ctrl-active' : ''" class="tree-tool" :disabled="!ready">أسماء</button>
+                <button @click="setMode('circle-photo')" :class="viewMode === 'circle-photo' ? 'ctrl-active' : ''" class="tree-tool" :disabled="!ready">صور</button>
+                <button @click="collapseAll()" class="tree-tool" :disabled="!ready">العرض الأساسي</button>
+                <button @click="expandAll()" class="tree-tool" :disabled="!ready">بسط الكل</button>
+                <button onclick="toggleRelationPanel()" class="tree-tool" :disabled="!ready">صلة القرابة</button>
+                <button @click="exportSVG()" class="tree-tool" :disabled="!ready">تصدير SVG</button>
+            </div>
+            <div class="flex gap-2">
+                 <button @click="mobileToolbar = !mobileToolbar"
+                          aria-label="أدوات الشجرة" :aria-expanded="mobileToolbar"
+                         class="tree-tool w-11 h-11" :class="mobileToolbar ? 'ctrl-active' : ''">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Tree -->
+        <div id="tree-container" class="flex-1">
+            <div id="tree-loader" class="absolute inset-0 flex flex-col items-center justify-center z-10">
+                <div class="tree-loader">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                        <circle cx="24" cy="24" r="20" stroke="#e0b352" stroke-width="2" stroke-dasharray="8 4" opacity="0.35"/>
+                        <circle cx="24" cy="24" r="12" stroke="#e0b352" stroke-width="2" opacity="0.55"/>
+                        <circle cx="24" cy="24" r="4" fill="#16181d"/>
+                    </svg>
+                </div>
+                <p class="text-slate-400 text-sm mt-4 font-light">جارٍ تحميل الشجرة...</p>
+            </div>
+
+            <div id="add-root-panel" class="absolute inset-0 flex-col items-center justify-center z-10 text-center px-4" style="display:none;">
+                {% csrf_token %}
+                <h2 class="text-2xl font-semibold mb-2 pf-text-ink">ابدأ شجرة العائلة</h2>
+                <p class="text-sm mb-5" style="color:var(--pf-muted)">أضف أوّل فرد (الجدّ) لتبدأ الشجرة.</p>
+                <div class="flex items-center gap-2">
+                    <input id="add-root-name" type="text" placeholder="اسم الجدّ" class="mint-input" style="max-width:240px;"
+                           onkeydown="if(event.key==='Enter'){event.preventDefault();submitAddRoot();}">
+                    <button type="button" onclick="submitAddRoot()" class="mint-btn mint-btn-primary">إضافة</button>
+                </div>
+            </div>
+
+            <!-- Relationship Finder Panel -->
+            <div id="relation-panel" class="absolute top-3 left-3 z-20 bg-white border border-slate-200 rounded-xl shadow-lg w-80 max-w-[calc(100vw-1.5rem)] transition-all duration-300 origin-top-left"
+                 style="display:none; opacity:0; transform:scale(0.95);">
+                <div class="p-3 border-b border-slate-100 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-mint-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                        <span class="text-sm font-semibold text-slate-700">صلة القرابة</span>
+                    </div>
+                    <button onclick="closeRelationPanel()" class="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <div class="p-3 space-y-2">
+                    <!-- Person A -->
+                    <div class="relative">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 block">الشخص الأول</label>
+                        <div class="flex items-center gap-2">
+                            <div id="rel-a-selected" class="hidden flex-1 min-w-0 flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#f8f0db] border border-[#ecdcb4] text-sm pf-text-ink">
+                                <span class="w-2 h-2 rounded-full bg-[#e0b352] flex-shrink-0"></span>
+                                <span id="rel-a-name" class="truncate flex-1 min-w-0"></span>
+                                <button onclick="clearRelPerson('a')" class="flex-shrink-0 text-mint-400 hover:text-mint-600">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                            <input id="rel-a-input" type="text" placeholder="ابحث بالاسم..." dir="rtl"
+                                   class="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-mint-400 focus:ring-1 focus:ring-mint-200 transition-all"
+                                   oninput="searchRelPerson('a', this.value)">
+                            <button id="rel-pick-a" type="button" onclick="toggleRelPickMode('a')" title="اختر من الشجرة"
+                                    class="rel-pick-btn flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-mint-600 hover:border-mint-300 transition-all">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
+                            </button>
+                        </div>
+                        <div id="rel-a-results" class="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto z-30" style="display:none;"></div>
+                    </div>
+                    <!-- Flip A <-> B -->
+                    <div class="flex justify-center -my-1 relative z-10">
+                        <button id="rel-flip" type="button" onclick="flipRelPersons()" title="عكس الشخصين" disabled
+                                class="w-7 h-7 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:text-[#8a6a1f] hover:border-[#e0b352] transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+                        </button>
+                    </div>
+                    <!-- Person B -->
+                    <div class="relative">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 block">الشخص الثاني</label>
+                        <div class="flex items-center gap-2">
+                            <div id="rel-b-selected" class="hidden flex-1 min-w-0 flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#f7edf0] border border-[#e0c2cc] text-sm text-[#8d4257]">
+                                <span class="w-2 h-2 rounded-full bg-[#8d4257] flex-shrink-0"></span>
+                                <span id="rel-b-name" class="truncate flex-1 min-w-0"></span>
+                                <button onclick="clearRelPerson('b')" class="flex-shrink-0 text-[#b07e8c] hover:text-[#8d4257]">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                            <input id="rel-b-input" type="text" placeholder="ابحث بالاسم..." dir="rtl"
+                                   class="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-[#8d4257] focus:ring-1 focus:ring-[#e0c2cc] transition-all"
+                                   oninput="searchRelPerson('b', this.value)">
+                            <button id="rel-pick-b" type="button" onclick="toggleRelPickMode('b')" title="اختر من الشجرة"
+                                    class="rel-pick-btn flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-[#8d4257] hover:border-[#e0c2cc] transition-all">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
+                            </button>
+                        </div>
+                        <div id="rel-b-results" class="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto z-30" style="display:none;"></div>
+                    </div>
+                </div>
+                <!-- Result -->
+                <div id="rel-result" class="hidden border-t border-slate-100 p-3">
+                    <div id="rel-result-content"></div>
+                </div>
+                <div id="rel-loading" class="hidden border-t border-slate-100 p-3 text-center">
+                    <svg class="w-5 h-5 animate-spin text-mint-500 mx-auto" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                </div>
+            </div>
+
+        </div>
+        <!-- Details share the workspace orientation without inheriting SVG pan/zoom. -->
+        <aside id="floating-detail" style="display:none;" aria-label="تفاصيل الفرد" tabindex="-1" hx-sync="this:replace">
+            <div class="md:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mt-3 mb-1"></div>
+            <div id="detail-content"></div>
+        </aside>
+        <div class="tree-zoom" aria-label="تكبير الشجرة وتصغيرها">
+            <button @click="zoomBy(0.8)" :disabled="!ready" aria-label="تصغير"><svg aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+            <output x-text="zoomPercent + '%'" aria-label="نسبة التكبير">100%</output>
+            <button @click="zoomBy(1.25)" :disabled="!ready" aria-label="تكبير"><svg aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+            <button @click="zoomToFit()" :disabled="!ready" aria-label="ملاءمة الشاشة" title="ملاءمة الشاشة"><svg aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+    </div>
+    <footer class="tree-status">
+        <div class="tree-legend"><span><i></i>مسار نسبك</span><span><i class="deceased"></i>متوفى</span></div>
+        <span class="tree-hint">اسحب للتنقل · اضغط على الاسم للتفاصيل وعلى + لإظهار الأبناء</span>
+        <span x-text="ready ? formatNumber(visiblePeople) + ' فرد ظاهر' : 'جارٍ التحميل'"></span>
+    </footer>
+</main>
+</div>
+
+<script>
+const treeNumberFormat = new Intl.NumberFormat('ar-OM');
+const nameSegments = new Intl.Segmenter('ar', { granularity: 'grapheme' });
+
+const tree = {
+    svg: null,
+    g: null,
+    root: null,
+    nodes: new Map(),
+    allNodes: new Map(),
+    overview: null,
+    navigationTimer: null,
+    zoom: null,
+    userPath: [],
+    highlightedId: null,
+    duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 400,
+    nodeWidth: 140,
+    nodeHeight: 104,
+    rectW: 120,
+    rectH: 52,
+    showBadges: true,
+    showPhotos: false,
+    viewMode: 'cards',
+    alpine: null,
+    relationPath: null,
+    relationA: null,
+    relationB: null,
+};
+
+function cancelNavigation() {
+    clearTimeout(tree.navigationTimer);
+    tree.svg?.interrupt();
+}
+
+function scheduleNavigation(callback, delay = tree.duration + 30) {
+    clearTimeout(tree.navigationTimer);
+    tree.navigationTimer = setTimeout(callback, delay);
+}
+
+function focusBranch(personId) {
+    const person = tree.allNodes.get(personId);
+    if (!person) return;
+    cancelNavigation();
+    hidePersonDetail();
+    closeRelationPanel();
+    const container = document.getElementById('tree-container');
+    if (!tree.overview) {
+        tree.overview = {
+            root: tree.root, nodes: tree.nodes,
+            transform: d3.zoomTransform(tree.svg.node()), extent: tree.zoom.scaleExtent(),
+            mode: tree.viewMode, width: container.clientWidth, height: container.clientHeight,
+            highlightedId: tree.highlightedId,
+        };
+    }
+    // Independent hierarchy nodes preserve the overview's folds and layout;
+    // person data and absolute ancestry still come from the canonical tree.
+    tree.root = d3.hierarchy(person.data, d => d.children);
+    tree.nodes = new Map(tree.root.descendants().map(d => [d.data.id, d]));
+    tree.root.x0 = 0;
+    tree.root.y0 = 0;
+    tree.highlightedId = personId;
+    tree.alpine.focusName = person.data.name;
+    tree.alpine.focusCount = tree.nodes.size;
+    setGenerationLimit('3');
+    Alpine.nextTick(() => {
+        if (tree.overview) document.getElementById('exit-branch-focus').focus({ preventScroll: true });
+    });
+}
+
+function exitBranchFocus(keepRelation = false) {
+    if (!tree.overview) return;
+    cancelNavigation();
+    hidePersonDetail();
+    if (!keepRelation) closeRelationPanel();
+    const saved = tree.overview;
+    tree.overview = null;
+    tree.root = saved.root;
+    tree.nodes = saved.nodes;
+    tree.viewMode = tree.alpine.viewMode = saved.mode;
+    tree.showPhotos = tree.alpine.showPhotos = saved.mode === 'circle-photo';
+    tree.highlightedId = saved.highlightedId;
+    tree.alpine.focusName = '';
+    applyViewLayout();
+    updateTree(tree.root);
+    scheduleNavigation(() => {
+        const container = document.getElementById('tree-container');
+        const t = saved.transform;
+        tree.zoom.scaleExtent(saved.extent);
+        tree.svg.transition().duration(tree.duration).call(tree.zoom.transform, d3.zoomIdentity
+            .translate(t.x + (container.clientWidth - saved.width) / 2,
+                t.y + (container.clientHeight - saved.height) / 2).scale(t.k));
+    }, 30);
+}
+
+function setGenerationLimit(value) {
+    if (!tree.overview || !['2', '3', '4', 'all'].includes(String(value))) return;
+    tree.alpine.generationLimit = String(value);
+    const limit = value === 'all' ? Infinity : Number(value);
+    tree.nodes.forEach(node => {
+        const children = node.children || node._children;
+        if (!children) return;
+        const folded = node.depth >= limit - 1;
+        node.children = folded ? null : children;
+        node._children = folded ? children : null;
+    });
+    hidePersonDetail();
+    updateTree(tree.root);
+    // Let the focus controls take their space, then move the camera alongside
+    // the layout rather than letting the branch disappear before fitting it.
+    scheduleNavigation(zoomToFit, 30);
+}
+
+function revealNode(personId) {
+    if (!tree.allNodes.has(personId)) return null;
+    if (!tree.nodes.has(personId)) exitBranchFocus();
+    const node = tree.nodes.get(personId);
+    let changed = false;
+    node.ancestors().slice(1).forEach(parent => {
+        if (parent._children) { parent.children = parent._children; parent._children = null; changed = true; }
+    });
+    if (changed && tree.overview) tree.alpine.generationLimit = 'custom';
+    return node;
+}
+
+function showToast(msg, type = 'info', duration = 3000) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transition = 'opacity 0.3s';
+        setTimeout(() => el.remove(), 300);
+    }, duration);
+}
+
+let treeInitialized = false;
+const HAS_ROOT = {{ has_root|yesno:'true,false' }};
+
+function getCsrfToken() {
+    const el = document.querySelector('input[name="csrfmiddlewaretoken"]');
+    return el ? el.value : '';
+}
+
+async function submitAddRoot() {
+    const input = document.getElementById('add-root-name');
+    const name = (input?.value || '').trim();
+    if (!name) { showToast('أدخل الاسم', 'error'); return; }
+    const fd = new FormData();
+    fd.append('first_name', name);
+    try {
+        const resp = await fetch('/api/root/add/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCsrfToken() },
+            body: fd,
+        });
+        const d = await resp.json().catch(() => ({}));
+        if (resp.ok && d.success) location.reload();
+        else showToast(d.error || 'تعذّر إضافة الجذر', 'error');
+    } catch (e) {
+        showToast('تعذّر الاتصال بالخادم', 'error');
+    }
+}
+
+async function initTree(alpineData) {
+    tree.alpine = alpineData;
+    if (treeInitialized) return;
+    treeInitialized = true;
+    const loader = document.getElementById('tree-loader');
+    const container = document.getElementById('tree-container');
+
+    if (!HAS_ROOT) {
+        if (loader) loader.remove();
+        const panel = document.getElementById('add-root-panel');
+        if (panel) panel.style.display = '';
+        return;
+    }
+
+    let data;
+    try {
+        const resp = await fetch('/api/tree/');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        data = await resp.json();
+    } catch (err) {
+        if (loader) loader.remove();
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'absolute inset-0 flex flex-col items-center justify-center z-10';
+        errorDiv.innerHTML = '<p class="text-red-400 text-lg mb-4">حدث خطأ في تحميل الشجرة</p>' +
+            '<button id="tree-retry-btn" data-action="retry" onclick="location.reload()" class="px-6 py-2 rounded-xl bg-mint-50 text-mint-600 border border-mint-200 hover:bg-mint-100 transition-all">حاول مرة أخرى</button>';
+        container.appendChild(errorDiv);
+        return;
+    }
+
+    tree.userPath = [];
+    await document.fonts.ready;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+
+    tree.svg = d3.select('#tree-container')
+        .append('svg')
+        .attr('width', '100%')
+        .attr('height', '100%')
+        .attr('role', 'group')
+        .attr('aria-label', 'شجرة العائلة التفاعلية');
+
+    const defs = tree.svg.append('defs');
+
+    const shadow = defs.append('filter').attr('id', 'node-shadow').attr('x', '-20%').attr('y', '-20%').attr('width', '140%').attr('height', '140%');
+    shadow.append('feDropShadow').attr('dx', '0').attr('dy', '2').attr('stdDeviation', '2').attr('flood-color', '#293443').attr('flood-opacity', '.06');
+
+    tree.g = tree.svg.append('g');
+
+    tree.zoom = d3.zoom()
+        .scaleExtent([0.2, 2])
+        .on('start', event => { if (event.sourceEvent) cancelNavigation(); })
+        .on('zoom', (event) => {
+            tree.g.attr('transform', event.transform);
+            tree.svg.classed('tree-overview', event.transform.k < 0.85);
+            tree.alpine.zoomPercent = Math.round(event.transform.k * 100);
+        });
+
+    tree.svg.call(tree.zoom);
+    tree.svg.call(tree.zoom.transform, d3.zoomIdentity.translate(width / 2, 80));
+    let lastWidth = width, lastHeight = height;
+    new ResizeObserver(() => {
+        const w = container.clientWidth, h = container.clientHeight;
+        if (!w || !h || (w === lastWidth && h === lastHeight)) return;
+        const t = d3.zoomTransform(tree.svg.node());
+        tree.svg.call(tree.zoom.transform, d3.zoomIdentity
+            .translate(t.x + (w - lastWidth) / 2, t.y + (h - lastHeight) / 2).scale(t.k));
+        lastWidth = w; lastHeight = h;
+    }).observe(container);
+
+    container.addEventListener('click', (e) => {
+        if (!e.target.closest('#floating-detail') && !e.target.closest('.node')) {
+            hidePersonDetail();
+        }
+    });
+
+    tree.root = d3.hierarchy(data.tree, d => d.children);
+    tree.nodes = tree.allNodes = new Map(tree.root.descendants().map(d => [d.data.id, d]));
+    tree.alpine.totalPeople = tree.root.descendants().length;
+    tree.alpine.generations = tree.root.height + 1;
+    tree.root.x0 = 0;
+    tree.root.y0 = 0;
+
+    tree.root.descendants().forEach(d => {
+        // Keep the user's branch near the middle of each sibling row so their
+        // parents remain in view at a readable zoom level.
+        const pathIndex = d.children?.findIndex(child => tree.userPath.includes(child.data.id)) ?? -1;
+        if (pathIndex >= 0) {
+            const [child] = d.children.splice(pathIndex, 1);
+            d.children.splice(Math.floor(d.children.length / 2), 0, child);
+        }
+        if (d.children && d.depth >= 3 && !tree.userPath.includes(d.data.id)) {
+            d._children = d.children;
+            d.children = null;
+        }
+    });
+
+    updateTree(tree.root);
+    tree.alpine.ready = true;
+
+    if (loader) {
+        loader.style.transition = 'opacity 0.5s';
+        loader.style.opacity = '0';
+        setTimeout(() => loader.remove(), 500);
+    }
+    const params = new URLSearchParams(window.location.search);
+    const highlightParam = params.get('highlight') || params.get('focus');
+    if (highlightParam) {
+        scheduleNavigation(() => zoomToNode(parseInt(highlightParam)), 600);
+    } else {
+        scheduleNavigation(() => zoomToFit(), 300);
+    }
+}
+
+function updateTree(source) {
+    cancelNavigation();
+    const sourceElement = tree.g.selectAll('g.node').filter(d => d.data.id === source.data.id).node();
+    const matrix = sourceElement?.transform.baseVal.consolidate()?.matrix;
+    const origin = matrix ? { x: matrix.e, y: matrix.f } : { x: source.x0, y: source.y0 };
+    // A shared transition interrupts both a card and its children when a user
+    // reverses a toggle before the previous animation has finished.
+    const transition = tree.svg.transition('layout').duration(tree.duration).ease(d3.easeCubicInOut);
+    const treeLayout = d3.tree()
+        .nodeSize([tree.nodeWidth, tree.nodeHeight])
+        .separation((a, b) => tree.viewMode === 'cards'
+            ? (tree.rectW + (a.parent === b.parent ? 20 : 28)) / tree.nodeWidth
+            : (a.parent === b.parent ? 1 : 1.15));
+
+    const treeData = treeLayout(tree.root);
+    const nodes = treeData.descendants();
+    const links = treeData.links();
+    tree.alpine.visiblePeople = nodes.length;
+
+    const link = tree.g.selectAll('path.link').data(links, d => d.target.data.id);
+
+    const linkEnter = link.enter().insert('path', 'g')
+        .attr('class', d => {
+            let cls = 'link';
+            if (tree.userPath.includes(d.source.data.id) && tree.userPath.includes(d.target.data.id)) cls += ' link--lineage';
+            if (tree.relationPath && tree.relationPath.includes(d.source.data.id) && tree.relationPath.includes(d.target.data.id)) cls += ' link--relation';
+            return cls;
+        })
+        .attr('d', diagonal(origin, origin));
+
+    linkEnter.merge(link)
+        .attr('class', d => {
+            let cls = 'link';
+            if (tree.userPath.includes(d.source.data.id) && tree.userPath.includes(d.target.data.id)) cls += ' link--lineage';
+            if (tree.relationPath && tree.relationPath.includes(d.source.data.id) && tree.relationPath.includes(d.target.data.id)) cls += ' link--relation';
+            return cls;
+        })
+        .transition(transition)
+        .attr('d', d => diagonal(d.source, d.target));
+
+    link.exit().transition(transition)
+        .attr('d', () => { const o = {x: source.x, y: source.y}; return diagonal(o, o); }).remove();
+
+    const node = tree.g.selectAll('g.node').data(nodes, d => d.data.id);
+
+    const nodeEnter = node.enter().append('g')
+        .attr('class', d => {
+            let cls = 'node';
+            if (d.data.id === tree.highlightedId) cls += ' node--search-result';
+            if (tree.relationA === d.data.id) cls += ' node--relation-a';
+            else if (tree.relationB === d.data.id) cls += ' node--relation-b';
+            else if (tree.relationPath && tree.relationPath.includes(d.data.id)) cls += ' node--relation-path';
+            return cls;
+        })
+        .attr('transform', `translate(${origin.x},${origin.y})`)
+        .style('opacity', 0);
+
+    nodeEnter.append('rect')
+        .attr('class', 'person-hit')
+        .attr('width', 1e-6).attr('height', 1e-6).attr('x', 0).attr('y', 0)
+        .attr('rx', 8).attr('ry', 8)
+        .style('fill', d => nodeGradient(d))
+        .style('stroke', d => nodeStroke(d))
+        .style('stroke-width', '1.5px')
+        .style('filter', 'url(#node-shadow)')
+        .attr('role', 'button')
+        .on('click', onNodeClick)
+        .on('keydown', (event, d) => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onNodeClick(event, d); }
+        });
+
+    nodeEnter.append('circle')
+        .attr('class', 'node-shape person-hit')
+        .attr('r', 0).attr('cx', 0).attr('cy', 0)
+        .style('fill', d => nodeGradient(d))
+        .style('stroke', d => nodeStroke(d))
+        .style('stroke-width', '1.5px')
+        .style('filter', 'url(#node-shadow)')
+        .style('display', 'none')
+        .attr('role', 'button')
+        .on('click', onNodeClick)
+        .on('keydown', (event, d) => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onNodeClick(event, d); }
+        });
+
+    nodeEnter.append('title').text(d => nodeLineageName(d));
+
+    nodeEnter.append('clipPath')
+        .attr('id', d => 'clip-' + d.data.id)
+        .append('circle').attr('r', 18).attr('cx', 0).attr('cy', 0);
+
+    nodeEnter.append('image')
+        .attr('class', 'node-photo')
+        .attr('width', 36).attr('height', 36).attr('x', -18).attr('y', -18)
+        .attr('clip-path', d => 'url(#clip-' + d.data.id + ')')
+        .attr('href', d => d.data.photo_url || '')
+        .style('display', 'none')
+        .on('click', onNodeClick);
+
+    nodeEnter.append('text')
+        .attr('class', 'label').attr('dy', 0).attr('text-anchor', 'middle')
+        .style('font-size', '12px').style('font-weight', '600')
+        .style('fill', '#293443').style('opacity', 0)
+        .text(d => d.data.name);
+
+    nodeEnter.append('text').attr('class', 'node-meta').attr('text-anchor', 'middle')
+        .style('font-size', '11px').style('fill', '#647082').style('pointer-events', 'none');
+
+    const toggleG = nodeEnter.append('g')
+        .attr('class', 'toggle-circle')
+        .style('display', d => (d.children || d._children) ? null : 'none')
+        .attr('role', 'button').attr('tabindex', 0)
+        .on('click', (event, d) => { event.stopPropagation(); toggleNode(d); })
+        .on('keydown', (event, d) => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); toggleNode(d); }
+        });
+
+    toggleG.append('circle').attr('r', 14).attr('cx', 0).attr('cy', 0)
+        .attr('class', 'toggle-face')
+        .style('fill', 'rgba(255,255,255,0.95)')
+        .style('stroke', 'rgba(203,213,225,0.6)')
+        .style('stroke-width', '1px');
+
+    toggleG.append('text')
+        .attr('class', 'toggle-text').attr('text-anchor', 'middle').attr('dy', 0)
+        .attr('direction', 'ltr')
+        .style('font-size', '11px').style('font-weight', '600')
+        .style('fill', 'rgba(51,65,85,0.8)')
+        .style('pointer-events', 'none')
+        .text(d => toggleLabel(d));
+
+    toggleG.append('circle').attr('class', 'toggle-hit').attr('aria-hidden', 'true')
+        .style('fill', 'transparent').style('pointer-events', 'all');
+
+    const nodeUpdate = nodeEnter.merge(node);
+    nodeUpdate.attr('class', d => {
+        let cls = 'node';
+        if (d.data.id === tree.highlightedId) cls += ' node--search-result';
+        if (tree.relationA === d.data.id) cls += ' node--relation-a';
+        else if (tree.relationB === d.data.id) cls += ' node--relation-b';
+        else if (tree.relationPath && tree.relationPath.includes(d.data.id)) cls += ' node--relation-path';
+        return cls;
+    });
+    nodeUpdate.style('pointer-events', null).transition(transition)
+        .style('opacity', 1)
+        .attr('transform', d => `translate(${d.x},${d.y})`);
+
+    const isCard = tree.viewMode === 'cards';
+    const circR = 22;
+
+    nodeUpdate.selectAll('.person-hit')
+        .attr('aria-label', d => 'تفاصيل ' + nodeLineageName(d))
+        .style('stroke', d => nodeStroke(d))
+        .style('stroke-dasharray', d => d.data.is_alive ? null : '4 3');
+
+    nodeUpdate.select('rect').style('display', isCard ? null : 'none')
+        .attr('tabindex', isCard ? 0 : -1)
+        .transition(transition)
+        .attr('x', -tree.rectW / 2).attr('y', -tree.rectH / 2)
+        .attr('width', tree.rectW).attr('height', tree.rectH)
+        .style('fill', d => nodeGradient(d));
+
+    nodeUpdate.select('circle.node-shape')
+        .style('display', isCard ? 'none' : null)
+        .attr('tabindex', isCard ? -1 : 0)
+        .transition(transition)
+        .attr('r', circR)
+        .style('fill', d => nodeGradient(d));
+
+    nodeUpdate.selectAll('image.node-photo')
+        .style('display', d => (!isCard && d.data.photo_url) ? null : 'none');
+
+    nodeUpdate.select('text.label')
+        .raise()
+        .attr('dy', isCard ? -3 : circR + 18)
+        .style('opacity', 1)
+        .style('font-size', isCard ? '16px' : '14px')
+        .style('font-weight', '600')
+        .style('fill', '#293443')
+        .each(function(d) {
+            const labelKey = tree.viewMode + ':' + d.data.name;
+            if (this._labelKey === labelKey) return;
+            this._labelKey = labelKey;
+            const el = d3.select(this);
+            el.text(d.data.name);
+            const maxW = isCard ? tree.rectW - 24 : 90;
+            if (this.getComputedTextLength() > maxW) {
+                const parts = Array.from(nameSegments.segment(d.data.name), part => part.segment);
+                while (parts.length > 1 && this.getComputedTextLength() > maxW) {
+                    parts.pop();
+                    el.text(parts.join('') + '…');
+                }
+            }
+        });
+
+    nodeUpdate.select('text.node-meta')
+        .style('display', isCard ? null : 'none').attr('dy', 17)
+        .text(d => 'الجيل ' + tree.alpine.formatNumber((tree.allNodes.get(d.data.id) || d).depth + 1) + (!d.data.is_alive ? ' · متوفى' : ''));
+
+    const badgeR = 14;
+    const badgeCX = isCard ? 0 : 24;
+    const badgeCY = isCard ? tree.rectH / 2 + 22 : 12;
+    nodeUpdate.select('g.toggle-circle')
+        .style('display', d => (d.children || d._children) ? null : 'none')
+        .attr('aria-expanded', d => Boolean(d.children))
+        .attr('aria-label', d => (d.children ? 'إخفاء أبناء ' : 'إظهار أبناء ') + d.data.name);
+    nodeUpdate.select('g.toggle-circle circle')
+        .attr('cx', badgeCX).attr('cy', badgeCY).attr('r', badgeR);
+    nodeUpdate.select('circle.toggle-hit')
+        .attr('cx', badgeCX).attr('cy', badgeCY).attr('r', isCard ? 22 : badgeR);
+    nodeUpdate.select('g.toggle-circle text.toggle-text')
+        .attr('x', badgeCX)
+        .attr('dy', badgeCY + 3)
+        .text(d => toggleLabel(d));
+
+    const nodeExit = node.exit().style('pointer-events', 'none').transition(transition)
+        .style('opacity', 0)
+        .attr('transform', `translate(${source.x},${source.y})`).remove();
+    nodeExit.select('rect').attr('x', 0).attr('y', 0).attr('width', 1e-6).attr('height', 1e-6);
+    nodeExit.select('circle.node-shape').attr('r', 0);
+
+    nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+    tree.layoutDone = transition.end().catch(() => {});
+}
+
+function nodeGradient(d) {
+    if (!d.data.is_alive) return '#eef0f3';
+    if (tree.viewMode === 'cards') return '#fdfdfe';
+    return d.data.gender === 'M' ? '#d7e2ef' : '#eedfe5';
+}
+
+function nodeStroke(d) {
+    return '#bac4d0';
+}
+
+function childCount(d) {
+    return d._children ? d._children.length : (d.children ? d.children.length : 0);
+}
+
+function toggleLabel(d) {
+    const count = childCount(d);
+    if (!count) return '';
+    if (!tree.showBadges) return d.children ? '−' : '+';
+    return d.children ? '−' : '+' + count;
+}
+
+function diagonal(s, d) {
+    return `M ${s.x} ${s.y} C ${s.x} ${(s.y + d.y) / 2}, ${d.x} ${(s.y + d.y) / 2}, ${d.x} ${d.y}`;
+}
+
+function toggleNode(d) {
+    if (tree.overview) tree.alpine.generationLimit = 'custom';
+    if (d.children) { d._children = d.children; d.children = null; }
+    else if (d._children) { d.children = d._children; d._children = null; }
+    updateTree(d);
+}
+
+// Expand the whole subtree under one person, in place. Uses the picked node as
+// the animation source so children grow out of it — exactly like tapping the
+// child-count badge (toggleNode), just for the entire subtree.
+function expandBranch(personId) {
+    const node = revealNode(personId);
+    if (!node) return;
+    if (tree.overview) tree.alpine.generationLimit = 'custom';
+    (function expand(d) {
+        if (d._children) { d.children = d._children; d._children = null; }
+        if (d.children) d.children.forEach(expand);
+    })(node);
+    updateTree(node);
+}
+
+// Collapse everyone under a person back into a single +N node, in place —
+// descendants fold into the picked node, matching the badge toggle.
+function collapseBranch(personId) {
+    const node = tree.nodes.get(personId);
+    if (!node) return;
+    if (tree.overview) tree.alpine.generationLimit = 'custom';
+    (function collapse(d) {
+        if (d.children) { d.children.forEach(collapse); d._children = d.children; d.children = null; }
+    })(node);
+    updateTree(node);
+}
+
+// Expand every collapsed node in the whole tree, then fit the view.
+function expandAll() {
+    if (!tree.root) return;
+    if (tree.overview) { setGenerationLimit('all'); return; }
+    (function expand(d) {
+        if (d._children) { d.children = d._children; d._children = null; }
+        if (d.children) d.children.forEach(expand);
+    })(tree.root);
+    updateTree(tree.root);
+    scheduleNavigation(zoomToFit);
+}
+
+function collapseAll() {
+    if (!tree.root) return;
+    if (tree.overview) { setGenerationLimit('3'); return; }
+    function collapse(d) {
+        const children = d.children || d._children;
+        if (!children) return;
+        children.forEach(collapse);
+        const folded = d.depth >= 3 && !tree.userPath.includes(d.data.id);
+        d.children = folded ? null : children;
+        d._children = folded ? children : null;
+    }
+    collapse(tree.root);
+    hidePersonDetail();
+    updateTree(tree.root);
+    scheduleNavigation(() => zoomToFit());
+}
+
+let detailHideTimer;
+function showPersonDetail(personId) {
+    cancelNavigation();
+    const card = document.getElementById('floating-detail');
+    clearTimeout(detailHideTimer);
+    tree.highlightedId = personId;
+    tree.g.selectAll('.node').classed('node--search-result', d => d.data.id === personId);
+    card.style.display = 'block';
+    card.setAttribute('aria-busy', 'true');
+    document.getElementById('detail-content').innerHTML = '<div class="fc"><p role="status">جارٍ تحميل التفاصيل...</p></div>';
+    requestAnimationFrame(() => card.classList.add('visible'));
+    htmx.ajax('GET', `/api/person/${personId}/`, { source: card, target: '#detail-content', swap: 'innerHTML' })
+        .then(() => {
+            card.setAttribute('aria-busy', 'false');
+            if (card.classList.contains('visible')) card.focus({ preventScroll: true });
+        }).catch(() => {
+            card.setAttribute('aria-busy', 'false');
+            document.getElementById('detail-content').innerHTML = '<div class="fc"><p>تعذّر تحميل التفاصيل. اضغط على الاسم للمحاولة مجدداً.</p><button class="fc-btn ghost" onclick="hidePersonDetail()">إغلاق</button></div>';
+        });
+}
+
+function hidePersonDetail() {
+    const card = document.getElementById('floating-detail');
+    card.classList.remove('visible');
+    clearTimeout(detailHideTimer);
+    detailHideTimer = setTimeout(() => { card.style.display = 'none'; }, tree.duration);
+    if (momPickState.personId) setMomPick(null);
+    if (branchPickState.mode) setBranchPickMode(null);
+}
+
+function zoomToNode(personId) {
+    if (!tree.root) return;
+    const target = revealNode(personId);
+    if (!target) return;
+    updateTree(tree.root);
+    tree.g.selectAll('.node--search-result').classed('node--search-result', false);
+    scheduleNavigation(() => {
+        tree.highlightedId = personId;
+        tree.g.selectAll('.node').classed('node--search-result', d => d.data.id === personId);
+        const container = document.getElementById('tree-container');
+        const k = 1;
+        const workspace = document.querySelector('.tree-wrapper');
+        const sideDetail = workspace.clientWidth >= 768 || (workspace.clientWidth >= 520 && workspace.clientHeight <= 500);
+        const detailWidth = sideDetail ? parseFloat(getComputedStyle(document.getElementById('floating-detail')).width) : 0;
+        const centerX = (container.clientWidth + detailWidth) / 2;
+        const transform = d3.zoomIdentity
+            .translate(centerX - k * target.x, container.clientHeight * 0.4 - k * target.y)
+            .scale(k);
+        tree.svg.transition().duration(tree.duration).call(tree.zoom.transform, transform);
+        scheduleNavigation(() => showPersonDetail(personId), tree.duration);
+    });
+}
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const card = document.getElementById('floating-detail');
+        if (card.contains(document.activeElement)) {
+            tree.g?.selectAll('.person-hit').filter(d => d.data.id === tree.highlightedId)
+                .filter(function() { return this.getAttribute('tabindex') === '0'; })
+                .node()?.focus({ preventScroll: true });
+        }
+        hidePersonDetail();
+        closeRelationPanel();
+    }
+});
+
+function togglePhotosVisibility() {
+    tree.showPhotos = !tree.showPhotos;
+    tree.viewMode = tree.showPhotos ? 'circle-photo' : 'cards';
+    applyViewLayout();
+    updateTree(tree.root);
+    scheduleNavigation(zoomToFit);
+}
+
+function setViewMode(mode) {
+    if (!tree.root) return;
+    tree.viewMode = mode;
+    tree.showPhotos = mode === 'circle-photo';
+    applyViewLayout();
+    updateTree(tree.root);
+    scheduleNavigation(zoomToFit);
+}
+
+function applyViewLayout() {
+    if (tree.viewMode === 'cards') {
+        tree.nodeWidth = 140; tree.nodeHeight = 104;
+    } else {
+        tree.nodeWidth = 112; tree.nodeHeight = 100;
+    }
+}
+
+function fitNodes(nodes, duration) {
+    cancelNavigation();
+    nodes = nodes.filter(d => d.x !== undefined);
+    if (!nodes.length) return;
+    const halfW = tree.viewMode === 'cards' ? tree.rectW / 2 : 50;
+    const halfH = tree.viewMode === 'cards' ? tree.rectH / 2 : 22;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    nodes.forEach(d => {
+        minX = Math.min(minX, d.x - halfW);
+        maxX = Math.max(maxX, d.x + halfW);
+        minY = Math.min(minY, d.y - halfH);
+        maxY = Math.max(maxY, d.y + halfH + (tree.viewMode === 'cards' && childCount(d) ? 44 : 24));
+    });
+    const container = document.getElementById('tree-container');
+    const cw = container.clientWidth, ch = container.clientHeight;
+    const tw = maxX - minX, th = maxY - minY;
+    const pad = ch < 300 ? 16 : 40;
+    const scale = Math.min((cw - 32) / (tw + pad), Math.max(40, ch - 64) / (th + pad), 1.2);
+    // Full-tree overviews can be smaller than the usual minimum. Keep the next
+    // zoom step relative instead of jumping abruptly back to 20%.
+    tree.zoom.scaleExtent([Math.min(0.2, scale), 2]);
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const transform = d3.zoomIdentity.translate(cw / 2 - cx * scale, (ch - 56) / 2 - cy * scale).scale(scale);
+    tree.svg.transition().duration(tree.duration ? duration : 0).call(tree.zoom.transform, transform);
+}
+
+function zoomToFit() { if (tree.root) fitNodes(tree.root.descendants(), tree.duration); }
+
+function toggleBadgesVisibility() {
+    tree.showBadges = !tree.showBadges;
+    tree.g.selectAll('g.toggle-circle text.toggle-text').text(d => toggleLabel(d));
+}
+
+// --- Relationship Finder ---
+const relState = { a: null, b: null, aName: '', bName: '', searchTimeout: null, pickMode: null, requestId: 0 };
+
+// "Pick mother from the tree" mode for the set-mom widget (holds the child id).
+const momPickState = { personId: null };
+
+function setMomPick(personId) {
+    momPickState.personId = personId;
+    const container = document.getElementById('tree-container');
+    if (container) container.style.cursor = personId ? 'crosshair' : '';
+    document.querySelectorAll('.mom-pick-btn').forEach(b => b.classList.remove('mom-pick-active'));
+    if (personId) {
+        const btn = document.getElementById('mom-pick-' + personId);
+        if (btn) btn.classList.add('mom-pick-active');
+        showToast('اضغط على المرأة في الشجرة لتحديدها كأم', 'info', 2500);
+    }
+}
+
+function toggleMomPick(personId) {
+    setMomPick(momPickState.personId === personId ? null : personId);
+}
+
+// Interactive "expand/collapse this branch" picker: arm a mode from the desktop
+// tools, then a tap on any node runs it on that node's subtree.
+const branchPickState = { mode: null };
+function setBranchPickMode(mode) {
+    branchPickState.mode = mode;
+    if (mode) { setRelPickMode(null); setMomPick(null); }
+    const container = document.getElementById('tree-container');
+    if (container) container.style.cursor = mode ? 'crosshair' : '';
+    ['expand', 'collapse'].forEach(m => {
+        const btn = document.getElementById(`branch-pick-${m}`);
+        if (btn) btn.classList.toggle('ctrl-active', branchPickState.mode === m);
+    });
+    if (mode) showToast(mode === 'expand' ? 'اضغط على فرع لبسطه' : 'اضغط على فرع لطيّه', 'info', 2500);
+}
+function toggleBranchPickMode(mode) {
+    setBranchPickMode(branchPickState.mode === mode ? null : mode);
+}
+
+// Central node-click handler: while picking (relationship finder OR set-mom OR
+// branch expand/collapse), a tap acts on the node instead of opening its card.
+function onNodeClick(event, d) {
+    event.stopPropagation();
+    if (branchPickState.mode) {
+        const mode = branchPickState.mode;
+        setBranchPickMode(null);
+        if (mode === 'expand') expandBranch(d.data.id);
+        else collapseBranch(d.data.id);
+        return;
+    }
+    if (momPickState.personId) {
+        if (d.data.gender === 'F') {
+            const childId = momPickState.personId;
+            setMomPick(null);
+            setMother(childId, d.data.id, d.data.name);
+        } else {
+            showToast('الأم يجب أن تكون أنثى', 'error');
+        }
+        return;
+    }
+    if (relState.pickMode) {
+        selectRelPersonFromNode(relState.pickMode, d);
+        return;
+    }
+    showPersonDetail(d.data.id);
+}
+
+// Build a short lineage label ("الاسم بن الأب") from the rendered hierarchy.
+function nodeLineageName(d) {
+    d = tree.allNodes.get(d.data.id) || d;
+    const parts = [d.data.name];
+    let p = d.parent;
+    while (p && parts.length < 3) { parts.push(p.data.name); p = p.parent; }
+    return parts[0] + (parts.length > 1 ? (d.data.gender === 'F' ? ' بنت ' : ' بن ') + parts.slice(1).join(' بن ') : '');
+}
+
+function selectRelPersonFromNode(slot, d) {
+    setRelPickMode(null);
+    selectRelPerson(slot, d.data.id, nodeLineageName(d));
+}
+
+function setRelPickMode(slot) {
+    relState.pickMode = slot;
+    const container = document.getElementById('tree-container');
+    if (container) container.style.cursor = slot ? 'crosshair' : '';
+    ['a', 'b'].forEach(s => {
+        const btn = document.getElementById(`rel-pick-${s}`);
+        if (btn) btn.classList.toggle('rel-pick-active', slot === s);
+    });
+    if (slot) showToast('اضغط على شخص في الشجرة لتحديده', 'info', 2500);
+}
+
+function toggleRelPickMode(slot) {
+    setRelPickMode(relState.pickMode === slot ? null : slot);
+}
+
+let relationHideTimer;
+function toggleRelationPanel() {
+    if (!tree.root) return;
+    hidePersonDetail();
+    const panel = document.getElementById('relation-panel');
+    clearTimeout(relationHideTimer);
+    if (panel.style.display === 'none' || !panel.style.display || panel.style.opacity === '0') {
+        panel.style.display = 'block';
+        requestAnimationFrame(() => { panel.style.opacity = '1'; panel.style.transform = 'scale(1)'; });
+    } else {
+        closeRelationPanel();
+    }
+}
+
+function closeRelationPanel() {
+    const panel = document.getElementById('relation-panel');
+    panel.style.opacity = '0';
+    panel.style.transform = 'scale(0.95)';
+    clearTimeout(relationHideTimer);
+    relationHideTimer = setTimeout(() => { panel.style.display = 'none'; }, tree.duration);
+    setRelPickMode(null);
+    clearRelationHighlight();
+}
+
+// Reusable person search/picker. Renders search results into `resultsEl` and
+// calls onPick({id, name, gender}) when one is chosen. `opts.gender` ('M'/'F')
+// filters candidates. Reads the data-* attributes on the server-rendered
+// search buttons rather than scraping onclick handlers.
+function personPicker(query, resultsEl, onPick, opts = {}) {
+    const genderParam = opts.gender ? `&gender=${opts.gender}` : '';
+    fetch(`{% url 'search_persons' %}?q=${encodeURIComponent(query)}${genderParam}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.text())
+    .then(html => {
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        const buttons = temp.querySelectorAll('button[data-person-id]');
+        resultsEl.innerHTML = '';
+        if (buttons.length === 0) {
+            resultsEl.innerHTML = '<div class="px-3 py-4 text-center text-xs text-slate-400">لا توجد نتائج</div>';
+        } else {
+            buttons.forEach(btn => {
+                const id = parseInt(btn.getAttribute('data-person-id'));
+                const name = btn.getAttribute('data-name');
+                const gender = btn.getAttribute('data-gender');
+                const newBtn = document.createElement('button');
+                newBtn.type = 'button';
+                newBtn.className = 'w-full text-right px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-0 text-sm text-slate-700 transition-colors';
+                newBtn.textContent = name;
+                newBtn.onclick = () => onPick({ id, name, gender });
+                resultsEl.appendChild(newBtn);
+            });
+        }
+        resultsEl.style.display = 'block';
+    });
+}
+
+function searchRelPerson(slot, query) {
+    clearTimeout(relState.searchTimeout);
+    const resultsDiv = document.getElementById(`rel-${slot}-results`);
+    if (query.length < 2) { resultsDiv.style.display = 'none'; return; }
+    relState.searchTimeout = setTimeout(() => {
+        personPicker(query, resultsDiv, ({ id, name }) => selectRelPerson(slot, id, name));
+    }, 250);
+}
+
+// --- Set Mother widget (used inside the person detail card) ---
+function searchMother(personId, query) {
+    clearTimeout(window._momTimeout);
+    const resultsEl = document.getElementById('mom-results-' + personId);
+    if (!resultsEl) return;
+    if (query.length < 2) { resultsEl.style.display = 'none'; return; }
+    window._momTimeout = setTimeout(() => {
+        personPicker(query, resultsEl, ({ id, name }) => setMother(personId, id, name), { gender: 'F' });
+    }, 250);
+}
+
+function setMother(personId, motherId, motherName) {
+    fetch(`/api/person/${personId}/set-mother/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'mother_id=' + encodeURIComponent(motherId)
+    })
+    .then(r => {
+        if (!r.ok) { r.json().then(d => showToast(d.error || 'حدث خطأ', 'error')); return; }
+        const eligible = parseInt(r.headers.get('X-Eligible-Siblings') || '0', 10);
+        htmx.ajax('GET', `/api/person/${personId}/`, { target: '#detail-content' });
+        showToast(motherId ? 'تم تحديث الأم' : 'تمت إزالة الأم', 'success');
+        // Offer to apply the same mother to siblings who don't have one yet.
+        if (motherId && motherName && eligible > 0 &&
+            confirm(`تعيين «${motherName}» أمًّا لـ ${eligible} من إخوة وأخوات هذا الشخص ممّن لا أمّ لهم حالياً؟`)) {
+            applyMotherToSiblings(personId, motherId);
+        }
+    })
+    .catch(() => showToast('حدث خطأ في الشبكة', 'error'));
+}
+
+function applyMotherToSiblings(personId, motherId) {
+    fetch(`/api/person/${personId}/set-mother/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'mother_id=' + encodeURIComponent(motherId) + '&apply_siblings=1'
+    })
+    .then(r => {
+        if (r.ok) {
+            htmx.ajax('GET', `/api/person/${personId}/`, { target: '#detail-content' });
+            showToast('تم تعيين الأم للإخوة والأخوات', 'success');
+        } else {
+            r.json().then(d => showToast(d.error || 'حدث خطأ', 'error'));
+        }
+    })
+    .catch(() => showToast('حدث خطأ في الشبكة', 'error'));
+}
+
+function clearMother(personId) { setMother(personId, ''); }
+
+function selectRelPerson(slot, personId, name) {
+    relState[slot] = personId;
+    relState[slot + 'Name'] = name;
+    document.getElementById(`rel-${slot}-results`).style.display = 'none';
+    document.getElementById(`rel-${slot}-input`).style.display = 'none';
+    const selected = document.getElementById(`rel-${slot}-selected`);
+    selected.classList.remove('hidden');
+    selected.classList.add('flex');
+    const nameEl = document.getElementById(`rel-${slot}-name`);
+    nameEl.textContent = name;
+    nameEl.title = name;
+    const flip = document.getElementById('rel-flip');
+    if (flip) flip.disabled = !(relState.a && relState.b);
+    if (relState.a && relState.b) {
+        fetchRelationship();
+    }
+}
+
+// Swap the two selected people (the label reads "A is B's X", so flipping shows
+// the reciprocal relationship, e.g. عمه ↔ ابن أخيه).
+function flipRelPersons() {
+    if (!relState.a || !relState.b) return;
+    [relState.a, relState.b] = [relState.b, relState.a];
+    [relState.aName, relState.bName] = [relState.bName, relState.aName];
+    ['a', 'b'].forEach(slot => {
+        const nameEl = document.getElementById(`rel-${slot}-name`);
+        nameEl.textContent = relState[slot + 'Name'];
+        nameEl.title = relState[slot + 'Name'];
+    });
+    fetchRelationship();
+}
+
+function clearRelPerson(slot) {
+    relState[slot] = null;
+    relState[slot + 'Name'] = '';
+    document.getElementById(`rel-${slot}-input`).style.display = 'block';
+    document.getElementById(`rel-${slot}-input`).value = '';
+    const selected = document.getElementById(`rel-${slot}-selected`);
+    selected.classList.add('hidden');
+    selected.classList.remove('flex');
+    const flip = document.getElementById('rel-flip');
+    if (flip) flip.disabled = true;
+    document.getElementById('rel-result').classList.add('hidden');
+    clearRelationHighlight();
+}
+
+// Escape user-supplied text before interpolating it into innerHTML — names are
+// member-editable, so an unescaped name is a stored-XSS vector here.
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+}
+
+// Build one relationship result card (paternal or maternal). Maternal hops in
+// the path are marked with a ♀ connector via `path_edges`.
+function relationCard(rel, title, titleColor) {
+    let pathHtml = '';
+    rel.path_names.forEach((name, i) => {
+        if (i > 0) {
+            const edge = (rel.path_edges || [])[i - 1];
+            pathHtml += edge === 'M'
+                ? '<span class="mx-0.5" style="color:#8d4257" title="من جهة الأم">♀</span>'
+                : '<span class="text-slate-300 mx-0.5">←</span>';
+        }
+        const id = rel.path_ids[i];
+        let dotStyle = 'background:#caa24a';
+        if (id === rel.person_a) dotStyle = 'background:#e0b352';
+        else if (id === rel.person_b) dotStyle = 'background:#8d4257';
+        pathHtml += `<span class="inline-flex items-center gap-1 text-xs pf-text-ink"><span class="w-1.5 h-1.5 rounded-full" style="${dotStyle}"></span>${esc(name)}</span>`;
+    });
+    return `<div class="mb-3 last:mb-0">
+        <div class="text-[10px] font-semibold ${titleColor} text-center mb-1">${title}</div>
+        <div class="text-center mb-1.5">
+            <div class="text-lg font-bold pf-head pf-text-ink mb-0.5">${esc(rel.label_ar)}</div>
+            <div class="text-[10px]" style="color:#9c9486">عبر ${esc(rel.lca_name)}</div>
+        </div>
+        <div class="flex flex-wrap items-center justify-center gap-0.5 px-1 py-2 rounded-lg" style="background:#f4f2ee;border:1px solid #e6e2d8" dir="ltr">
+            ${pathHtml}
+        </div>
+    </div>`;
+}
+
+function fetchRelationship() {
+    const requestId = ++relState.requestId;
+    const loading = document.getElementById('rel-loading');
+    const result = document.getElementById('rel-result');
+    loading.classList.remove('hidden');
+    result.classList.add('hidden');
+
+    fetch(`{% url 'find_relationship' %}?a=${relState.a}&b=${relState.b}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (requestId !== relState.requestId) return;
+        loading.classList.add('hidden');
+        result.classList.remove('hidden');
+        const content = document.getElementById('rel-result-content');
+        if (data.error || (!data.paternal && !data.maternal)) {
+            content.innerHTML =
+                `<div class="text-center text-sm text-slate-400 py-2">${data.error || 'لا توجد صلة قرابة'}</div>`;
+            clearRelationHighlight();
+            return;
+        }
+
+        let html = '';
+        if (data.paternal) html += relationCard(data.paternal, 'من جهة الأب', 'pf-text-ink');
+        if (data.maternal) html += relationCard(data.maternal, 'من جهة الأم', 'text-[#8d4257]');
+        content.innerHTML = html;
+
+        // Highlight the union of both paths; maternal cross-branch hops simply
+        // have no drawn edge in the patrilineal graph (handled gracefully).
+        const ref = data.paternal || data.maternal;
+        const ids = [...new Set([
+            ...(data.paternal ? data.paternal.path_ids : []),
+            ...(data.maternal ? data.maternal.path_ids : []),
+        ])];
+        highlightRelationPath(ids, ref.person_a, ref.person_b);
+    })
+    .catch(() => {
+        if (requestId !== relState.requestId) return;
+        loading.classList.add('hidden');
+        result.classList.remove('hidden');
+        document.getElementById('rel-result-content').innerHTML =
+            '<div class="text-center text-sm text-red-400 py-2">حدث خطأ</div>';
+    });
+}
+
+function highlightRelationPath(pathIds, personA, personB) {
+    if (tree.overview && pathIds.some(id => !tree.nodes.has(id))) exitBranchFocus(true);
+    tree.relationPath = pathIds;
+    tree.relationA = personA;
+    tree.relationB = personB;
+
+    pathIds.forEach(revealNode);
+
+    updateTree(tree.root);
+
+    scheduleNavigation(() => {
+        const pathNodes = tree.root.descendants().filter(n => pathIds.includes(n.data.id));
+        fitNodes(pathNodes, tree.duration);
+    });
+}
+
+function clearRelationHighlight() {
+    relState.requestId++;
+    document.getElementById('rel-loading').classList.add('hidden');
+    tree.relationPath = null;
+    tree.relationA = null;
+    tree.relationB = null;
+    if (tree.root) updateTree(tree.root);
+}
+
+function treeApp() {
+    return {
+        focusName: '',
+        focusCount: 0,
+        generationLimit: '3',
+        ready: false,
+        totalPeople: 0,
+        visiblePeople: 0,
+        generations: 0,
+        zoomPercent: 100,
+        formatNumber(value) { return treeNumberFormat.format(value); },
+        peopleWord(n) { return n === 1 ? 'فرد' : n === 2 ? 'فردان' : (n % 100 >= 3 && n % 100 <= 10) ? 'أفراد' : 'فردًا'; },
+        generationWord(n) { return n === 1 ? 'جيل' : n === 2 ? 'جيلان' : (n % 100 >= 3 && n % 100 <= 10) ? 'أجيال' : 'جيلًا'; },
+        showBadges: true,
+        showPhotos: false,
+        viewMode: 'cards',
+        init() {
+            const viewport = document.getElementById('tree-viewport');
+            const measure = () => {
+                viewport.style.setProperty('--viewport-width', viewport.clientWidth + 'px');
+                viewport.style.setProperty('--viewport-height', viewport.clientHeight + 'px');
+            };
+            measure();
+            new ResizeObserver(measure).observe(viewport);
+            initTree(this);
+        },
+        zoomBy(k) { cancelNavigation(); if (tree.svg) tree.svg.transition().duration(tree.duration).call(tree.zoom.scaleBy, k); },
+        expandAll() { expandAll(); },
+        collapseAll() { collapseAll(); },
+        zoomToFit() { zoomToFit(); },
+        toggleBadges() { this.showBadges = !this.showBadges; toggleBadgesVisibility(); },
+        togglePhotos() { this.showPhotos = !this.showPhotos; this.viewMode = this.showPhotos ? 'circle-photo' : 'cards'; togglePhotosVisibility(); },
+        toggleCircleNames() {
+            const newMode = this.viewMode === 'cards' ? 'circle-photo' : 'cards';
+            this.viewMode = newMode;
+            this.showPhotos = newMode === 'circle-photo';
+            setViewMode(newMode);
+        },
+        setMode(mode) {
+            if (!this.ready) return;
+            this.viewMode = mode;
+            this.showPhotos = mode === 'circle-photo';
+            setViewMode(mode);
+        },
+        async exportSVG() {
+            if (!tree.g || !tree.svg) return;
+            const layout = tree.layoutDone;
+            await layout;
+            if (layout !== tree.layoutDone) return;
+            let bbox;
+            try { bbox = tree.g.node().getBBox(); }
+            catch (e) { showToast('تعذّر تصدير الشجرة', 'error'); return; }
+            if (!bbox || !bbox.width) { showToast('وسّع الشجرة أولاً ثم صدّرها', 'info'); return; }
+
+            const pad = 60;
+            const w = Math.round(bbox.width + pad * 2);
+            const h = Math.round(bbox.height + pad * 2);
+            const NS = 'http://www.w3.org/2000/svg';
+
+            const clone = tree.svg.node().cloneNode(true);
+            clone.setAttribute('xmlns', NS);
+            clone.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${w} ${h}`);
+            clone.setAttribute('width', w);
+            clone.setAttribute('height', h);
+            clone.removeAttribute('style');
+            // Drop the on-screen zoom/pan so the tree sits inside the viewBox.
+            const clonedG = clone.querySelector('g');
+            if (clonedG) clonedG.removeAttribute('transform');
+            // External photo <image>s can't be embedded in a standalone file — drop
+            // them so circles fall back to their colour fill (no broken images).
+            clone.querySelectorAll('image').forEach(im => im.remove());
+
+            const styles = document.createElementNS(NS, 'style');
+            styles.textContent = "text{font-family:'Tajawal','IBM Plex Sans Arabic',sans-serif}" +
+                ".link{fill:none;stroke:#bdc5cf;stroke-width:1.5px}" +
+                ".link--lineage{stroke:#7899c0;stroke-width:2px}" +
+                ".node--search-result .person-hit{stroke:#4775ab!important;stroke-width:2px!important}" +
+                ".link--relation{stroke:#caa24a;stroke-width:3px}";
+            clone.insertBefore(styles, clone.firstChild);
+            const bg = document.createElementNS(NS, 'rect');
+            bg.setAttribute('x', bbox.x - pad); bg.setAttribute('y', bbox.y - pad);
+            bg.setAttribute('width', w); bg.setAttribute('height', h);
+            bg.setAttribute('fill', '#f5f7fa');
+            clone.insertBefore(bg, styles.nextSibling);
+
+            const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const name = (tree.overview ? tree.root.data.name : '{{ site_name|escapejs }}').replace(/[\\/:*?"<>|]/g, '_');
+            a.href = url; a.download = `شجرة_${name}.svg`;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            showToast('تم تصدير الشجرة', 'success');
+        },
+    };
+}
+</script>
+{% endblock %}
